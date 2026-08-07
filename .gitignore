@@ -19,6 +19,7 @@ logs/
 # Build & Dist
 dist/
 build/
+.vite/
 
 # Sensitive Credentials & Keys
 *.pem

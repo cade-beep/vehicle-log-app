@@ -60,8 +60,18 @@ vehicle-log-app/
 ├── style.css           # Glassmorphic Dark UI Design System
 ├── app.js              # 데이터 처리, XSS 방지, CSV Export, LocalStorage
 ├── SECURITY_PLAN.md    # 보안 위험성 진단 및 아키텍처 문서
+├── BILLING_PLAN.md     # 빌링, 서브스크립션 및 리소스 쿼터 보호 계획서
 └── README.md           # 프로젝트 가이드
 ```
+
+---
+
+## 💳 빌링 및 쿼터 관리 방침
+자세한 빌링 명세, 쿼터 제어 및 비용 최적화 정책은 [`BILLING_PLAN.md`](./BILLING_PLAN.md) 문서를 참고하세요.
+- Cloudflare Pages & Google Apps Script 영구 무료 요금제 ($0/월) 운용
+- 요청 과금 방지를 위한 폴링 주기(30초) 및 페이로드 크기(8KB) 제한
+- Zero Paid API 수신 구조로 예기치 않은 과금 전면 차단
+- 쿼터 모니터링 및 비상 시 긴급 차단 매뉴얼(Kill-Switch Runbook) 수립
 
 ---
 
@@ -69,4 +79,4 @@ vehicle-log-app/
 자세한 보안 진단 및 대책은 [`SECURITY_PLAN.md`](./SECURITY_PLAN.md) 문서를 참고하세요.
 - XSS (Cross-Site Scripting) 방어
 - 주행거리 역전 입력 차단
-- LocalStorage 저장소 샌드박싱
+- LocalStorage 및 구글 시트 샌드박싱
