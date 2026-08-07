@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>차량 사용일지 스마트 대시보드 | Vehicle Log App</title>
+    <title>차량 사용일지 작성</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,59 +21,11 @@
                     <i class="fa-solid fa-car-side"></i>
                 </div>
                 <div>
-                    <h1>차량 사용일지 대시보드</h1>
-                    <p class="subtitle">스마트 운행 기록 & 안전 관리 시스템</p>
+                    <h1>차량 사용일지 작성</h1>
+                    <p class="subtitle">간편 운행 기록 및 관리 시스템</p>
                 </div>
-            </div>
-            <div class="header-actions">
-                <div class="security-badge">
-                    <i class="fa-solid fa-shield-halved"></i> 보안 인젝션 및 XSS 방어 적용
-                </div>
-                <button id="btnExportCSV" class="btn btn-secondary">
-                    <i class="fa-solid fa-file-csv"></i> CSV 내보내기
-                </button>
             </div>
         </header>
-
-        <!-- Stats Overview Cards -->
-        <section class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon blue">
-                    <i class="fa-solid fa-road"></i>
-                </div>
-                <div class="stat-info">
-                    <span class="stat-label">총 누적 주행거리</span>
-                    <span id="statTotalKm" class="stat-value">0 km</span>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon green">
-                    <i class="fa-solid fa-list-check"></i>
-                </div>
-                <div class="stat-info">
-                    <span class="stat-label">총 운행 건수</span>
-                    <span id="statTotalCount" class="stat-value">0 건</span>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon purple">
-                    <i class="fa-solid fa-briefcase"></i>
-                </div>
-                <div class="stat-info">
-                    <span class="stat-label">업무용 운행 비율</span>
-                    <span id="statBusinessRatio" class="stat-value">0 %</span>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon orange">
-                    <i class="fa-solid fa-gauge-high"></i>
-                </div>
-                <div class="stat-info">
-                    <span class="stat-label">평균 주행거리 / 건</span>
-                    <span id="statAvgKm" class="stat-value">0 km</span>
-                </div>
-            </div>
-        </section>
 
         <!-- Main Content Layout -->
         <main class="main-content">
@@ -86,61 +38,67 @@
                 <form id="vehicleLogForm" class="log-form" novalidate>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="driveDate"><i class="fa-regular fa-calendar"></i> 운행 일자</label>
-                            <input type="date" id="driveDate" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="driverName"><i class="fa-solid fa-user"></i> 운전자 성명</label>
-                            <input type="text" id="driverName" placeholder="홍길동" required maxlength="20">
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="carNumber"><i class="fa-solid fa-car"></i> 차량 번호</label>
-                            <input type="text" id="carNumber" placeholder="12가 3456" required maxlength="15">
-                        </div>
-                        <div class="form-group">
-                            <label for="purposeCategory"><i class="fa-solid fa-tag"></i> 운행 구분</label>
-                            <select id="purposeCategory" required>
-                                <option value="업무용">업무용 (Business)</option>
-                                <option value="출퇴근">출퇴근 (Commute)</option>
-                                <option value="비업무용">비업무용 (Personal)</option>
-                                <option value="정비/주유">정비/주유 (Maintenance)</option>
+                            <label for="vehicleNo"><i class="fa-solid fa-car"></i> 차량선택 <span class="required-star">*</span></label>
+                            <select id="vehicleNo" required>
+                                <option value="">차량 선택...</option>
+                                <option value="0704">0704</option>
+                                <option value="8318">8318</option>
+                                <option value="1213">1213</option>
+                                <option value="5486">5486</option>
                             </select>
                         </div>
-                    </div>
-
-                    <div class="form-row">
                         <div class="form-group">
-                            <label for="startLocation"><i class="fa-solid fa-location-dot"></i> 출발지</label>
-                            <input type="text" id="startLocation" placeholder="본사 사옥" required maxlength="30">
-                        </div>
-                        <div class="form-group">
-                            <label for="endLocation"><i class="fa-solid fa-flag-checkered"></i> 도착지</label>
-                            <input type="text" id="endLocation" placeholder="고객사 미팅 장소" required maxlength="30">
+                            <label for="driveDate"><i class="fa-regular fa-calendar"></i> 운행일 <span class="required-star">*</span></label>
+                            <input type="date" id="driveDate" required>
                         </div>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="startOdometer"><i class="fa-solid fa-gauge"></i> 출발 계기판 (km)</label>
-                            <input type="number" id="startOdometer" placeholder="10500" min="0" required>
+                            <label for="departTime"><i class="fa-regular fa-clock"></i> 출발시간 <span class="required-star">*</span></label>
+                            <input type="time" id="departTime" required>
                         </div>
                         <div class="form-group">
-                            <label for="endOdometer"><i class="fa-solid fa-gauge"></i> 도착 계기판 (km)</label>
-                            <input type="number" id="endOdometer" placeholder="10585" min="0" required>
+                            <label for="arriveTime"><i class="fa-regular fa-clock"></i> 도착시간 <span class="required-star">*</span></label>
+                            <input type="time" id="arriveTime" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="driverName"><i class="fa-solid fa-user"></i> 운전자 <span class="required-star">*</span></label>
+                            <input type="text" id="driverName" placeholder="운전자 성명" required maxlength="20">
+                        </div>
+                        <div class="form-group">
+                            <label for="passengerCount"><i class="fa-solid fa-users"></i> 인원 <span class="required-star">*</span></label>
+                            <input type="number" id="passengerCount" placeholder="1" min="1" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="odometer"><i class="fa-solid fa-gauge"></i> 계기판 (km) <span class="required-star">*</span></label>
+                            <input type="number" id="odometer" placeholder="누적거리 (예: 10500)" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="distance"><i class="fa-solid fa-road"></i> 운행거리 (km) <span class="required-star">*</span></label>
+                            <input type="number" id="distance" placeholder="운행거리 (예: 45)" min="0" step="any" required>
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label for="calcDistance"><i class="fa-solid fa-calculator"></i> 주행거리 (자동 계산)</label>
-                        <input type="text" id="calcDistance" readonly placeholder="0 km" class="readonly-input">
+                        <label for="destination"><i class="fa-solid fa-location-dot"></i> 목적지 <span class="required-star">*</span></label>
+                        <input type="text" id="destination" placeholder="목적지 입력" required maxlength="50">
                     </div>
 
                     <div class="form-group">
-                        <label for="memo"><i class="fa-regular fa-comment-dots"></i> 비고 / 세부 목적</label>
-                        <textarea id="memo" rows="2" placeholder="미팅 세부 내용 및 주유 내역 등" maxlength="150"></textarea>
+                        <label for="purpose"><i class="fa-solid fa-clipboard-list"></i> 운행사유 <span class="required-star">*</span></label>
+                        <input type="text" id="purpose" placeholder="운행 사유 입력" required maxlength="100">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="fuelCost"><i class="fa-solid fa-gas-pump"></i> 단가/주유금액 (원) <span class="optional-text">(선택)</span></label>
+                        <input type="number" id="fuelCost" placeholder="선택 입력 (비워둬도 저장 가능)" min="0">
                     </div>
 
                     <!-- Alert message container -->
@@ -157,23 +115,22 @@
                 <div class="card-header">
                     <h2><i class="fa-solid fa-table-list"></i> 운행 기록 목록</h2>
                     <span id="lastUpdated" class="last-updated"></span>
-                    <div class="table-search">
-                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input type="text" id="searchInput" placeholder="운전자, 차량번호, 목적 검색...">
-                    </div>
                 </div>
 
                 <div class="table-wrapper">
                     <table class="log-table">
                         <thead>
                             <tr>
-                                <th>일자</th>
+                                <th>차량</th>
+                                <th>운행일</th>
+                                <th>시간</th>
                                 <th>운전자</th>
-                                <th>차량번호</th>
-                                <th>구분</th>
-                                <th>출발지 ➔ 도착지</th>
-                                <th>주행거리</th>
-                                <th>비고</th>
+                                <th>계기판</th>
+                                <th>운행거리</th>
+                                <th>목적지</th>
+                                <th>운행사유</th>
+                                <th>인원</th>
+                                <th>주유금액</th>
                                 <th>관리</th>
                             </tr>
                         </thead>
@@ -191,11 +148,7 @@
 
         <!-- Footer -->
         <footer class="app-footer">
-            <p>© 2026 Vehicle Usage Log App. Security-First Architecture & Privacy Protected.</p>
-            <p class="footer-links">
-                <a href="./SECURITY_PLAN.md" target="_blank"><i class="fa-solid fa-shield"></i> 보안 설계 문서</a> | 
-                <a href="./.env.example" target="_blank"><i class="fa-solid fa-code"></i> .env.example 템플릿</a>
-            </p>
+            <p>© 2026 Vehicle Usage Log App.</p>
         </footer>
     </div>
 

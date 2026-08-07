@@ -1,4 +1,4 @@
-/* Modern Dynamic CSS Design System */
+/* Modern Responsive CSS Design System */
 :root {
     --bg-main: #0f172a;
     --bg-card: rgba(30, 41, 59, 0.7);
@@ -10,9 +10,7 @@
     --primary-glow: rgba(59, 130, 246, 0.4);
     
     --success: #10b981;
-    --warning: #f59e0b;
     --danger: #ef4444;
-    --purple: #8b5cf6;
     
     --text-main: #f8fafc;
     --text-muted: #94a3b8;
@@ -39,14 +37,14 @@ body {
     background: radial-gradient(circle at top right, #1e1b4b, #0f172a 60%);
     color: var(--text-main);
     min-height: 100vh;
-    padding: 24px;
+    padding: 24px 16px;
     display: flex;
     justify-content: center;
 }
 
 .app-container {
     width: 100%;
-    max-width: 1400px;
+    max-width: 1350px;
     display: flex;
     flex-direction: column;
     gap: 24px;
@@ -57,7 +55,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 28px;
+    padding: 20px 24px;
     background: var(--bg-card);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-color);
@@ -74,7 +72,7 @@ body {
 .brand-icon {
     width: 48px;
     height: 48px;
-    background: linear-gradient(135deg, var(--primary), var(--purple));
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
@@ -93,82 +91,6 @@ body {
 .subtitle {
     font-size: 13px;
     color: var(--text-muted);
-}
-
-.header-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.security-badge {
-    background: rgba(16, 185, 129, 0.15);
-    color: var(--success);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    padding: 8px 14px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-/* Stats Overview */
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 18px;
-}
-
-.stat-card {
-    background: var(--bg-card);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    transition: var(--transition);
-}
-
-.stat-card:hover {
-    transform: translateY(-3px);
-    background: var(--bg-card-hover);
-    border-color: rgba(255, 255, 255, 0.2);
-}
-
-.stat-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
-}
-
-.stat-icon.blue { background: rgba(59, 130, 246, 0.2); color: var(--primary); }
-.stat-icon.green { background: rgba(16, 185, 129, 0.2); color: var(--success); }
-.stat-icon.purple { background: rgba(139, 92, 246, 0.2); color: var(--purple); }
-.stat-icon.orange { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
-
-.stat-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.stat-label {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-weight: 500;
-}
-
-.stat-value {
-    font-size: 22px;
-    font-weight: 700;
-    margin-top: 2px;
 }
 
 /* Main Layout */
@@ -234,6 +156,12 @@ body {
     gap: 12px;
 }
 
+@media (max-width: 480px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
 .form-group {
     display: flex;
     flex-direction: column;
@@ -249,6 +177,16 @@ body {
     gap: 6px;
 }
 
+.required-star {
+    color: #f87171;
+    font-weight: bold;
+}
+
+.optional-text {
+    font-size: 11px;
+    color: var(--text-dark);
+}
+
 input, select, textarea {
     background: rgba(15, 23, 42, 0.6);
     border: 1px solid var(--border-color);
@@ -260,16 +198,14 @@ input, select, textarea {
     transition: var(--transition);
 }
 
+select option {
+    background: #1e293b;
+    color: #f8fafc;
+}
+
 input:focus, select:focus, textarea:focus {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-glow);
-}
-
-.readonly-input {
-    background: rgba(15, 23, 42, 0.9);
-    color: var(--primary);
-    font-weight: 700;
-    border-style: dashed;
 }
 
 /* Buttons */
@@ -296,16 +232,6 @@ input:focus, select:focus, textarea:focus {
 .btn-primary:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px var(--primary-glow);
-}
-
-.btn-secondary {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-main);
-    border: 1px solid var(--border-color);
-}
-
-.btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.18);
 }
 
 .btn-block {
@@ -336,28 +262,10 @@ input:focus, select:focus, textarea:focus {
 
 .hidden { display: none; }
 
-/* Table Search & Wrapper */
-.table-search {
-    position: relative;
-    width: 260px;
-}
-
-.search-icon {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-dark);
-}
-
-.table-search input {
-    width: 100%;
-    padding-left: 36px;
-    background: rgba(15, 23, 42, 0.7);
-}
-
+/* Table & Wrapper */
 .table-wrapper {
     overflow-x: auto;
+    border-radius: var(--radius-sm);
 }
 
 .log-table {
@@ -365,11 +273,12 @@ input:focus, select:focus, textarea:focus {
     border-collapse: collapse;
     text-align: left;
     font-size: 13px;
+    white-space: nowrap;
 }
 
 .log-table th {
     padding: 12px 14px;
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(15, 23, 42, 0.7);
     color: var(--text-muted);
     font-weight: 600;
     border-bottom: 1px solid var(--border-color);
@@ -384,18 +293,14 @@ input:focus, select:focus, textarea:focus {
     background: rgba(255, 255, 255, 0.03);
 }
 
-.tag-badge {
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 600;
+.vehicle-tag {
     display: inline-block;
+    padding: 4px 8px;
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    border-radius: 6px;
+    font-size: 12px;
 }
-
-.tag-business { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
-.tag-commute { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
-.tag-personal { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; }
-.tag-maintenance { background: rgba(245, 158, 11, 0.2); color: #fde68a; }
 
 .btn-delete {
     background: transparent;
@@ -429,15 +334,6 @@ input:focus, select:focus, textarea:focus {
     padding: 16px;
     color: var(--text-dark);
     font-size: 12px;
-}
-
-.footer-links a {
-    color: var(--text-muted);
-    text-decoration: none;
-}
-
-.footer-links a:hover {
-    color: var(--primary);
 }
 
 /* 목록 최근 갱신 시각 */
