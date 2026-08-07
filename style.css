@@ -266,6 +266,8 @@ input:focus, select:focus, textarea:focus {
 .table-wrapper {
     overflow-x: auto;
     border-radius: var(--radius-sm);
+    container-type: inline-size;
+    container-name: tablewrap;
 }
 
 .log-table {
@@ -313,6 +315,51 @@ input:focus, select:focus, textarea:focus {
 
 .btn-delete:hover {
     color: var(--danger);
+}
+
+/* Below 560px of the table's own width, rows become label:value cards
+   instead of squeezing/scrolling a wide table. */
+@container tablewrap (max-width: 560px) {
+    .log-table, .log-table thead, .log-table tbody, .log-table tr, .log-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .log-table thead { display: none; }
+
+    .log-table tbody tr {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        margin-bottom: 10px;
+        padding: 4px 0;
+    }
+
+    .log-table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        white-space: normal;
+        border-bottom: 1px dashed var(--border-color);
+    }
+
+    .log-table tr td:last-child { border-bottom: none; }
+
+    .log-table td::before {
+        content: attr(data-label);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .log-table td.col-actions {
+        justify-content: flex-end;
+    }
+
+    .log-table td.col-actions::before {
+        content: "";
+    }
 }
 
 /* Empty State */

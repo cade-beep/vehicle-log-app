@@ -37,9 +37,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyState = document.getElementById('emptyState');
     const lastUpdatedEl = document.getElementById('lastUpdated');
 
-    // Default Values
-    driveDateInput.valueAsDate = new Date();
+    // driveDate/departTime/arriveTime are plain numeric text fields (no native
+    // calendar/clock picker) so staff can type digits straight through; this
+    // masks input into YYYY-MM-DD / HH:MM as they type.
+    function digitMask(el, groups, sep) {
+        el.addEventListener('input', () => {
+            const digits = el.value.replace(/\D/g, '').slice(0, groups.reduce((a, b) => a + b, 0));
+            const parts = [];
+            let idx = 0;
+            for (const len of groups) {
+                if (digits.length <= idx) break;
+                parts.push(digits.slice(idx, idx + len));
+                idx += len;
+            }
+            el.value = parts.join(sep);
+        });
+    }
+    digitMask(driveDateInput, [4, 2, 2], '-');
+    digitMask(departTimeInput, [2, 2], ':');
+    digitMask(arriveTimeInput, [2, 2], ':');
 
+    function todayStr() {
+        const d = new Date();
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    // Default Values
+    driveDateInput.value = todayStr();
+
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    const TIME_RE = /^\d{2}:\d{2}$/;
     const ALLOWED_VEHICLES = ['0704', '8318', '1213', '5486'];
 
     // -------------------------------------------------------------
@@ -255,13 +283,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         // 2. Date Validation
-        if (!date) {
-            showAlert('운행일을 입력해 주세요.', 'danger');
+        if (!DATE_RE.test(date)) {
+            showAlert('운행일을 YYYY-MM-DD 형식의 숫자로 입력해 주세요 (예: 2026-08-04).', 'danger');
             return;
         }
         // 3. Time Validation
-        if (!departTime || !arriveTime) {
-            showAlert('출발시간과 도착시간을 입력해 주세요.', 'danger');
+        if (!TIME_RE.test(departTime) || !TIME_RE.test(arriveTime)) {
+            showAlert('출발/도착 시간을 HH:MM 형식의 숫자로 입력해 주세요 (예: 09:00).', 'danger');
             return;
         }
         // 4. Driver Validation
@@ -330,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Form Reset
             form.reset();
-            driveDateInput.valueAsDate = new Date();
+            driveDateInput.value = todayStr();
 
             await refreshLogs();
         } catch (err) {
@@ -376,17 +404,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '-';
 
             tr.innerHTML = `
-                <td><strong class="vehicle-tag">${escapeHTML(r.vehicleNo)}</strong></td>
-                <td>${escapeHTML(r.date)}</td>
-                <td>${escapeHTML(r.departTime)} ~ ${escapeHTML(r.arriveTime)}</td>
-                <td><strong>${escapeHTML(r.driver)}</strong></td>
-                <td>${r.odometer.toLocaleString()} km</td>
-                <td><strong>${r.distance.toLocaleString()} km</strong></td>
-                <td>${escapeHTML(r.destination)}</td>
-                <td>${escapeHTML(r.purpose)}</td>
-                <td>${r.passengerCount} 명</td>
-                <td>${formattedFuelCost}</td>
-                <td>
+                <td data-label="차량"><strong class="vehicle-tag">${escapeHTML(r.vehicleNo)}</strong></td>
+                <td data-label="운행일">${escapeHTML(r.date)}</td>
+                <td data-label="시간">${escapeHTML(r.departTime)} ~ ${escapeHTML(r.arriveTime)}</td>
+                <td data-label="운전자"><strong>${escapeHTML(r.driver)}</strong></td>
+                <td data-label="계기판">${r.odometer.toLocaleString()} km</td>
+                <td data-label="운행거리"><strong>${r.distance.toLocaleString()} km</strong></td>
+                <td data-label="목적지">${escapeHTML(r.destination)}</td>
+                <td data-label="운행사유">${escapeHTML(r.purpose)}</td>
+                <td data-label="인원">${r.passengerCount} 명</td>
+                <td data-label="주유금액">${formattedFuelCost}</td>
+                <td class="col-actions">
                     <button class="btn-delete" data-id="${escapeHTML(r.id)}" title="삭제">
                         <i class="fa-solid fa-trash-can"></i>
                     </button>
