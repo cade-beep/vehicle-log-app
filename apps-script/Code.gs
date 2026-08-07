@@ -1,0 +1,405 @@
+/**
+ * Vehicle Usage Log App - Google Apps Script backend
+ *
+ * Deploy as a Web App:
+ *   Execute as       : Me
+ *   Who has access   : Anyone
+ *
+ * IMPORTANT (CORS): Apps Script cannot set custom CORS headers and does not
+ * handle OPTIONS preflight requests. The frontend therefore POSTs with
+ * Content-Type 'text/plain;charset=utf-8' (a CORS "simple request", so no
+ * preflight is issued). The body is still JSON and is parsed below.
+ *
+ * IMPORTANT (HTTP status): ContentService cannot set HTTP status codes.
+ * Every response is HTTP 200. The `status` value inside the error payload is
+ * informational only - clients must branch on `success`, never on res.status.
+ */
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+const CONFIG = {
+  SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID',
+  SHEET_NAME: '운행일지',
+  TIMEZONE: 'Asia/Seoul',
+  MAX_PAYLOAD_BYTES: 8192,
+  LOCK_TIMEOUT_MS: 10000,
+};
+
+/**
+ * Sheet columns. `key` is the field name used by app.js (unchanged from the
+ * original localStorage schema); `header` is what facility staff see in the
+ * spreadsheet. Columns are located by header text, so staff may reorder
+ * columns without breaking the API - but renaming a header will.
+ */
+const COLUMNS = [
+  { key: 'id',        header: '기록ID',         type: 'text'   },
+  { key: 'date',      header: '일자',           type: 'text'   },
+  { key: 'driver',    header: '운전자',          type: 'text'   },
+  { key: 'carNumber', header: '차량번호',        type: 'text'   },
+  { key: 'category',  header: '구분',           type: 'text'   },
+  { key: 'startLoc',  header: '출발지',          type: 'text'   },
+  { key: 'endLoc',    header: '도착지',          type: 'text'   },
+  { key: 'startKm',   header: '출발계기판(km)',  type: 'number' },
+  { key: 'endKm',     header: '도착계기판(km)',  type: 'number' },
+  { key: 'distance',  header: '주행거리(km)',    type: 'number' },
+  { key: 'memo',      header: '비고',           type: 'text'   },
+  { key: 'createdAt', header: '작성시각',        type: 'text'   },
+];
+
+const CATEGORIES = ['업무용', '출퇴근', '비업무용', '정비/주유'];
+
+// Mirrors the maxlength attributes in index.html. Client-side limits are a
+// convenience; these are the ones that actually bind.
+const LIMITS = {
+  driver: 20,
+  carNumber: 15,
+  startLoc: 30,
+  endLoc: 30,
+  memo: 150,
+  maxKm: 10000000,
+};
+
+// ---------------------------------------------------------------------------
+// Entry points
+// ---------------------------------------------------------------------------
+
+function doGet(e) {
+  try {
+    const logs = getLogs_();
+    return jsonResponse_({ success: true, data: logs, count: logs.length });
+  } catch (err) {
+    console.error('doGet failed: ' + (err && err.stack ? err.stack : err));
+    return errorResponse_(
+      err.code || 'SERVER_ERROR',
+      err.userMessage || '데이터를 불러오지 못했습니다.',
+      500
+    );
+  }
+}
+
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return errorResponse_('BAD_REQUEST', '요청 본문이 비어 있습니다.', 400);
+    }
+    if (e.postData.contents.length > CONFIG.MAX_PAYLOAD_BYTES) {
+      return errorResponse_('PAYLOAD_TOO_LARGE', '요청 크기가 너무 큽니다.', 413);
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      return errorResponse_('BAD_JSON', '요청 형식이 올바르지 않습니다.', 400);
+    }
+
+    const action = payload.action || 'create';
+    if (action === 'create') return handleCreate_(payload);
+    if (action === 'delete') return handleDelete_(payload);
+    return errorResponse_('UNKNOWN_ACTION', '알 수 없는 요청입니다.', 400);
+  } catch (err) {
+    console.error('doPost failed: ' + (err && err.stack ? err.stack : err));
+    return errorResponse_(
+      err.code || 'SERVER_ERROR',
+      err.userMessage || '처리 중 오류가 발생했습니다.',
+      500
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+function handleCreate_(payload) {
+  const result = validateLogInput_(payload);
+  if (!result.valid) {
+    return errorResponse_('VALIDATION_ERROR', result.errors[0], 400);
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(CONFIG.LOCK_TIMEOUT_MS)) {
+    return errorResponse_('BUSY', '다른 요청을 처리 중입니다. 잠시 후 다시 시도해 주세요.', 503);
+  }
+  try {
+    const sheet = getSheet_();
+    const index = getHeaderIndex_(sheet);
+
+    const record = result.clean;
+    record.id = createLogId_();
+    record.createdAt = Utilities.formatDate(
+      new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX"
+    );
+
+    const width = Math.max(sheet.getLastColumn(), COLUMNS.length);
+    const row = new Array(width).fill('');
+    COLUMNS.forEach(function (col) {
+      row[index[col.key]] = record[col.key];
+    });
+    sheet.appendRow(row);
+
+    return jsonResponse_({
+      success: true,
+      message: '운행일지가 등록되었습니다.',
+      data: record,
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleDelete_(payload) {
+  const id = payload.id ? String(payload.id).trim() : '';
+  if (!id) {
+    return errorResponse_('VALIDATION_ERROR', '삭제할 기록 ID가 없습니다.', 400);
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(CONFIG.LOCK_TIMEOUT_MS)) {
+    return errorResponse_('BUSY', '다른 요청을 처리 중입니다. 잠시 후 다시 시도해 주세요.', 503);
+  }
+  try {
+    const sheet = getSheet_();
+    const index = getHeaderIndex_(sheet);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return errorResponse_('NOT_FOUND', '해당 기록을 찾을 수 없습니다.', 404);
+    }
+
+    const ids = sheet.getRange(2, index.id + 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() === id) {
+        sheet.deleteRow(i + 2);
+        return jsonResponse_({
+          success: true,
+          message: '운행일지가 삭제되었습니다.',
+          data: { id: id },
+        });
+      }
+    }
+    return errorResponse_('NOT_FOUND', '해당 기록을 찾을 수 없습니다.', 404);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sheet access
+// ---------------------------------------------------------------------------
+
+function getSheet_() {
+  if (!CONFIG.SPREADSHEET_ID || CONFIG.SPREADSHEET_ID === 'YOUR_SPREADSHEET_ID') {
+    throw makeError_('CONFIG_ERROR', '스프레드시트 ID가 설정되지 않았습니다.');
+  }
+  let ss;
+  try {
+    ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  } catch (err) {
+    // Deliberately does not echo the spreadsheet ID back to the client.
+    console.error('openById failed: ' + err);
+    throw makeError_('CONFIG_ERROR', '스프레드시트를 열 수 없습니다. 설정을 확인하세요.');
+  }
+  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) {
+    throw makeError_('CONFIG_ERROR', "'" + CONFIG.SHEET_NAME + "' 시트를 찾을 수 없습니다.");
+  }
+  return sheet;
+}
+
+/** Maps each expected column key to its 0-based column index. */
+function getHeaderIndex_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    throw makeError_('CONFIG_ERROR', '시트에 헤더 행이 없습니다. setupSheet()를 먼저 실행하세요.');
+  }
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+    .map(function (h) { return String(h).trim(); });
+
+  const index = {};
+  const missing = [];
+  COLUMNS.forEach(function (col) {
+    const i = headers.indexOf(col.header);
+    if (i === -1) missing.push(col.header);
+    else index[col.key] = i;
+  });
+  if (missing.length) {
+    throw makeError_('CONFIG_ERROR', '시트 헤더가 올바르지 않습니다. 누락: ' + missing.join(', '));
+  }
+  return index;
+}
+
+function getLogs_() {
+  const sheet = getSheet_();
+  const index = getHeaderIndex_(sheet);
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  const logs = [];
+
+  values.forEach(function (row) {
+    const blank = row.every(function (cell) { return cell === '' || cell === null; });
+    if (blank) return;
+
+    const log = {};
+    COLUMNS.forEach(function (col) {
+      log[col.key] = normalizeCell_(row[index[col.key]], col.type);
+    });
+    // Rows without an ID are not app-managed records (e.g. staff scratch notes).
+    if (!log.id) return;
+    logs.push(log);
+  });
+
+  return logs;
+}
+
+/**
+ * Coerces a raw cell into the type app.js expects.
+ * A human can type anything into any cell, so this must never throw.
+ * Date cells are formatted in CONFIG.TIMEZONE - serialising a Date straight to
+ * JSON would render it in UTC and shift the day for early-morning entries.
+ */
+function normalizeCell_(value, type) {
+  if (value === null || value === undefined || value === '') {
+    return type === 'number' ? 0 : '';
+  }
+  if (type === 'number') {
+    const n = Number(value);
+    return isFinite(n) ? n : 0;
+  }
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return Utilities.formatDate(value, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  }
+  return String(value);
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+function validateLogInput_(payload) {
+  const errors = [];
+  const clean = {};
+  const text = function (v) {
+    return (v === null || v === undefined) ? '' : String(v).trim();
+  };
+
+  clean.date = text(payload.date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean.date)) {
+    errors.push('운행일자를 올바르게 입력해 주세요.');
+  }
+
+  clean.driver = text(payload.driver);
+  if (!clean.driver) errors.push('운전자 성명을 입력해 주세요.');
+  else if (clean.driver.length > LIMITS.driver) errors.push('운전자 성명이 너무 깁니다.');
+
+  clean.carNumber = text(payload.carNumber);
+  if (!clean.carNumber) errors.push('차량번호를 입력해 주세요.');
+  else if (clean.carNumber.length > LIMITS.carNumber) errors.push('차량번호가 너무 깁니다.');
+
+  clean.category = text(payload.category);
+  if (CATEGORIES.indexOf(clean.category) === -1) {
+    errors.push('운행구분 값이 올바르지 않습니다.');
+  }
+
+  clean.startLoc = text(payload.startLoc);
+  if (!clean.startLoc) errors.push('출발지를 입력해 주세요.');
+  else if (clean.startLoc.length > LIMITS.startLoc) errors.push('출발지가 너무 깁니다.');
+
+  clean.endLoc = text(payload.endLoc);
+  if (!clean.endLoc) errors.push('도착지를 입력해 주세요.');
+  else if (clean.endLoc.length > LIMITS.endLoc) errors.push('도착지가 너무 깁니다.');
+
+  clean.memo = text(payload.memo);
+  if (clean.memo.length > LIMITS.memo) errors.push('비고가 너무 깁니다.');
+
+  const startKm = Number(payload.startKm);
+  const endKm = Number(payload.endKm);
+  if (!isFinite(startKm) || !isFinite(endKm)) {
+    errors.push('계기판 값은 숫자로 입력해 주세요.');
+  } else if (startKm < 0 || endKm < 0) {
+    errors.push('계기판 값은 0 이상이어야 합니다.');
+  } else if (endKm < startKm) {
+    errors.push('도착 계기판 거리는 출발 계기판 거리보다 크거나 같아야 합니다.');
+  } else if (endKm > LIMITS.maxKm) {
+    errors.push('계기판 값이 너무 큽니다.');
+  } else {
+    clean.startKm = startKm;
+    clean.endKm = endKm;
+    // Always recalculated here. Any `distance` sent by the client is ignored.
+    clean.distance = endKm - startKm;
+  }
+
+  return { valid: errors.length === 0, errors: errors, clean: clean };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * ponytail: timestamp + random rather than a per-day sequence (log-...-001),
+ * which would need a full scan of the ID column on every insert. Switch if
+ * staff ever need human-countable sequential numbers.
+ */
+function createLogId_() {
+  const stamp = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
+  return 'log-' + stamp + '-' + (Math.floor(Math.random() * 9000) + 1000);
+}
+
+function jsonResponse_(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * `status` is echoed in the body for debugging only. The real HTTP status is
+ * always 200 - ContentService cannot set status codes.
+ */
+function errorResponse_(code, message, status) {
+  return jsonResponse_({
+    success: false,
+    error: { code: code, message: message, status: status || 400 },
+  });
+}
+
+function makeError_(code, userMessage) {
+  const err = new Error(userMessage);
+  err.code = code;
+  err.userMessage = userMessage;
+  return err;
+}
+
+// ---------------------------------------------------------------------------
+// One-time setup - run manually from the Apps Script editor
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the sheet and its header row. Run once from the editor
+ * (select setupSheet -> Run). Safe to re-run: it never deletes data rows.
+ */
+function setupSheet() {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(CONFIG.SHEET_NAME);
+
+  const headers = COLUMNS.map(function (c) { return c.header; });
+  sheet.getRange(1, 1, 1, headers.length)
+    .setValues([headers])
+    .setFontWeight('bold')
+    .setBackground('#f1f5f9');
+  sheet.setFrozenRows(1);
+
+  const col = function (key) { return COLUMNS.map(function (c) { return c.key; }).indexOf(key) + 1; };
+  sheet.getRange(2, col('date'), sheet.getMaxRows() - 1, 1).setNumberFormat('yyyy-mm-dd');
+  sheet.getRange(2, col('startKm'), sheet.getMaxRows() - 1, 3).setNumberFormat('#,##0');
+  sheet.getRange(2, col('createdAt'), sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+
+  sheet.autoResizeColumns(1, headers.length);
+  SpreadsheetApp.flush();
+  console.log("'" + CONFIG.SHEET_NAME + "' 시트 준비 완료.");
+}

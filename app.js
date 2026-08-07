@@ -1,5 +1,8 @@
 /**
  * Vehicle Usage Log Application - Client Logic & Security Architecture
+ *
+ * Storage: Google Sheets via an Apps Script web app (see apps-script/Code.gs).
+ * The Apps Script URL is configured in config.js.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,11 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const calcDistanceInput = document.getElementById('calcDistance');
     const memoInput = document.getElementById('memo');
     const formAlert = document.getElementById('formAlert');
-    
+    const submitButton = form.querySelector('button[type="submit"]');
+
     const tableBody = document.getElementById('logTableBody');
     const emptyState = document.getElementById('emptyState');
     const searchInput = document.getElementById('searchInput');
     const btnExportCSV = document.getElementById('btnExportCSV');
+    const lastUpdatedEl = document.getElementById('lastUpdated');
 
     // Stat Elements
     const statTotalKm = document.getElementById('statTotalKm');
@@ -31,9 +36,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Default Date to Today
     driveDateInput.valueAsDate = new Date();
 
-    // Data Storage (LocalStorage Key)
-    const STORAGE_KEY = 'vehicle_log_records_v1';
-    let records = loadRecords();
+    // -------------------------------------------------------------
+    // Configuration
+    // -------------------------------------------------------------
+
+    const APP_CONFIG = window.APP_CONFIG || {};
+    const API_URL = String(APP_CONFIG.APPS_SCRIPT_URL || '').trim();
+    const POLLING_INTERVAL_MS = Number(APP_CONFIG.POLLING_INTERVAL_MS) || 10000;
+    const REQUEST_TIMEOUT_MS = 15000;
+
+    let records = [];
+    let isSubmitting = false;
+    let isRefreshing = false;
+    let pollingTimer = null;
+    let lastRenderedSignature = null;
 
     // -------------------------------------------------------------
     // Security & Utility Functions
@@ -41,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Escape HTML strings to prevent XSS (Cross-Site Scripting)
-     * @param {string} str 
+     * @param {string} str
      * @returns {string} Safe HTML string
      */
     function escapeHTML(str) {
@@ -55,62 +71,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Load records securely from LocalStorage
+     * Coerce one record coming back from the spreadsheet into the shape the
+     * rest of this file assumes.
+     *
+     * Spreadsheet cells are typed by whoever edits the sheet, so a "number"
+     * column can contain arbitrary text and any cell can be blank. Without
+     * this, renderTable()'s .toLowerCase() throws on a blank cell (killing the
+     * whole table) and updateStats() string-concatenates instead of adding.
+     * Everything downstream may assume: text fields are strings, numeric
+     * fields are finite numbers.
      */
-    function loadRecords() {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : getSampleRecords();
-        } catch (e) {
-            console.error('Failed to parse local records', e);
-            return getSampleRecords();
-        }
+    function normalizeRecord(raw) {
+        const r = (raw && typeof raw === 'object') ? raw : {};
+        const str = (v) => (v === null || v === undefined) ? '' : String(v);
+        const num = (v) => { const n = Number(v); return isFinite(n) ? n : 0; };
+
+        return {
+            id:        str(r.id),
+            date:      str(r.date),
+            driver:    str(r.driver),
+            carNumber: str(r.carNumber),
+            category:  str(r.category),
+            startLoc:  str(r.startLoc),
+            endLoc:    str(r.endLoc),
+            startKm:   num(r.startKm),
+            endKm:     num(r.endKm),
+            distance:  num(r.distance),
+            memo:      str(r.memo),
+            createdAt: str(r.createdAt),
+        };
     }
 
-    /**
-     * Save records to LocalStorage
-     */
-    function saveRecords() {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-        } catch (e) {
-            showAlert('로컬 저장소 저장에 실패했습니다.', 'danger');
-        }
-    }
-
-    /**
-     * Initial Sample Data for better demonstration
-     */
-    function getSampleRecords() {
-        const today = new Date().toISOString().split('T')[0];
-        return [
-            {
-                id: 'rec_1',
-                date: today,
-                driver: '홍길동',
-                carNumber: '12가 3456',
-                category: '업무용',
-                startLoc: '본사 사옥',
-                endLoc: '강남 미팅룸',
-                startKm: 12500,
-                endKm: 12545,
-                distance: 45,
-                memo: '클라이언트 미팅 참석'
-            },
-            {
-                id: 'rec_2',
-                date: today,
-                driver: '김철수',
-                carNumber: '78나 9012',
-                category: '출퇴근',
-                startLoc: '자택',
-                endLoc: '본사 사옥',
-                startKm: 34100,
-                endKm: 34120,
-                distance: 20,
-                memo: '오전 출근'
-            }
-        ];
+    /** Newest first. Sorted client-side so manual row reordering in the sheet doesn't change the view. */
+    function sortByNewest(list) {
+        return list.slice().sort((a, b) => {
+            if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+            return a.date < b.date ? 1 : -1;
+        });
     }
 
     /**
@@ -139,12 +136,162 @@ document.addEventListener('DOMContentLoaded', () => {
     endOdometerInput.addEventListener('input', updateCalculatedDistance);
 
     // -------------------------------------------------------------
+    // API Layer (Google Apps Script)
+    // -------------------------------------------------------------
+
+    /**
+     * Shared request handling: timeout, network errors, non-2xx, bad JSON,
+     * and API-level {success:false}.
+     *
+     * NOTE: POST uses Content-Type 'text/plain;charset=utf-8' on purpose.
+     * 'application/json' would make the browser send a CORS preflight
+     * (OPTIONS), which Apps Script web apps cannot answer - the request would
+     * fail before reaching the server. text/plain is a CORS "simple request".
+     * The body is still JSON and Apps Script parses it as such.
+     */
+    async function apiRequest(method, body) {
+        if (!API_URL) {
+            throw new Error('Apps Script 주소가 설정되지 않았습니다. config.js를 확인해 주세요.');
+        }
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+        let response;
+        try {
+            const options = { method, cache: 'no-store', signal: controller.signal };
+            if (body) {
+                options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+                options.body = JSON.stringify(body);
+            }
+            response = await fetch(API_URL, options);
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                throw new Error('서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
+            }
+            console.error('Network request failed', err);
+            throw new Error('서버에 연결할 수 없습니다. 인터넷 연결을 확인해 주세요.');
+        } finally {
+            clearTimeout(timer);
+        }
+
+        if (!response.ok) {
+            console.error('HTTP error', response.status);
+            throw new Error(`서버에 연결하지 못했습니다. (오류 ${response.status})`);
+        }
+
+        let result;
+        try {
+            result = await response.json();
+        } catch (err) {
+            // Usually means the Apps Script URL is wrong and we got an HTML page.
+            console.error('Failed to parse API response as JSON', err);
+            throw new Error('서버 응답을 해석할 수 없습니다. Apps Script 주소를 확인해 주세요.');
+        }
+
+        // Apps Script cannot set HTTP status codes - every response is 200,
+        // so success/failure must be read from the payload.
+        if (!result || result.success !== true) {
+            const message = result && result.error && result.error.message;
+            throw new Error(message || '서버가 오류를 반환했습니다.');
+        }
+        return result;
+    }
+
+    async function fetchLogs() {
+        const result = await apiRequest('GET');
+        const list = Array.isArray(result.data) ? result.data : [];
+        return sortByNewest(list.map(normalizeRecord));
+    }
+
+    async function createLog(logData) {
+        const result = await apiRequest('POST', Object.assign({ action: 'create' }, logData));
+        return normalizeRecord(result.data);
+    }
+
+    async function deleteLogById(id) {
+        await apiRequest('POST', { action: 'delete', id });
+    }
+
+    // -------------------------------------------------------------
+    // Data Refresh & Polling
+    // -------------------------------------------------------------
+
+    function setLastUpdated(text) {
+        if (lastUpdatedEl) lastUpdatedEl.textContent = text;
+    }
+
+    function showEmptyState(message) {
+        emptyState.style.display = 'block';
+        const p = emptyState.querySelector('p');
+        if (p && message) p.innerHTML = message;
+    }
+
+    /**
+     * @param {{showLoading?: boolean}} opts
+     */
+    async function refreshLogs({ showLoading = false } = {}) {
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        try {
+            if (showLoading) {
+                tableBody.innerHTML = '';
+                showEmptyState('운행일지를 불러오는 중입니다...');
+            }
+
+            const logs = await fetchLogs();
+            records = logs;
+            renderTable(searchInput.value);
+            updateStats();
+
+            const now = new Date();
+            setLastUpdated(`최근 갱신 ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
+        } catch (err) {
+            console.error('Failed to load logs', err);
+            // Background polling failures must not wipe data already on screen.
+            if (showLoading || records.length === 0) {
+                tableBody.innerHTML = '';
+                lastRenderedSignature = null;
+                showEmptyState(`데이터를 불러오지 못했습니다.<br>${escapeHTML(err.message)}`);
+                updateStats();
+            }
+            setLastUpdated('갱신 실패');
+        } finally {
+            isRefreshing = false;
+        }
+    }
+
+    function startPolling() {
+        if (pollingTimer) return;
+        pollingTimer = setInterval(() => refreshLogs(), POLLING_INTERVAL_MS);
+    }
+
+    function stopPolling() {
+        if (!pollingTimer) return;
+        clearInterval(pollingTimer);
+        pollingTimer = null;
+    }
+
+    // Don't poll a tab nobody is looking at.
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopPolling();
+        } else {
+            refreshLogs();
+            startPolling();
+        }
+    });
+
+    // -------------------------------------------------------------
     // Form Submission & Validation
     // -------------------------------------------------------------
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
         e.preventDefault();
         hideAlert();
+
+        if (isSubmitting) return;
 
         const date = driveDateInput.value;
         const driver = driverNameInput.value.trim();
@@ -156,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const endKm = parseFloat(endOdometerInput.value);
         const memo = memoInput.value.trim();
 
-        // Validation Checks
+        // Validation Checks (the server validates again - this is for fast feedback)
         if (!date || !driver || !carNumber || !startLoc || !endLoc || isNaN(startKm) || isNaN(endKm)) {
             showAlert('모든 필수 항목을 입력해 주세요.', 'danger');
             return;
@@ -167,35 +314,35 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const distance = endKm - startKm;
+        // distance is deliberately not sent - the server recalculates it.
+        const payload = { date, driver, carNumber, category, startLoc, endLoc, startKm, endKm, memo };
 
-        // Create New Record
-        const newRecord = {
-            id: 'rec_' + Date.now(),
-            date,
-            driver,
-            carNumber,
-            category,
-            startLoc,
-            endLoc,
-            startKm,
-            endKm,
-            distance,
-            memo
-        };
+        isSubmitting = true;
+        const originalLabel = submitButton.innerHTML;
+        submitButton.disabled = true;
+        submitButton.textContent = '저장 중...';
 
-        records.unshift(newRecord);
-        saveRecords();
-        renderTable();
-        updateStats();
+        try {
+            await createLog(payload);
 
-        showAlert('운행일지가 성공적으로 등록되었습니다!', 'success');
+            showAlert('운행일지가 성공적으로 등록되었습니다!', 'success');
 
-        // Form Reset
-        form.reset();
-        driveDateInput.valueAsDate = new Date();
-        startOdometerInput.value = endKm; // Next trip default start odometer
-        updateCalculatedDistance();
+            // Form Reset
+            form.reset();
+            driveDateInput.valueAsDate = new Date();
+            startOdometerInput.value = endKm; // Next trip default start odometer
+            updateCalculatedDistance();
+
+            await refreshLogs();
+        } catch (err) {
+            // Input is left untouched so the user can retry without retyping.
+            console.error('Failed to create log', err);
+            showAlert(err.message || '저장에 실패했습니다. 다시 시도해 주세요.', 'danger');
+        } finally {
+            isSubmitting = false;
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalLabel;
+        }
     });
 
     // Alert Messages
@@ -222,8 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderTable(filterQuery = '') {
-        tableBody.innerHTML = '';
-        const query = filterQuery.toLowerCase();
+        const query = String(filterQuery || '').toLowerCase();
 
         const filtered = records.filter(r => {
             return r.driver.toLowerCase().includes(query) ||
@@ -233,8 +379,16 @@ document.addEventListener('DOMContentLoaded', () => {
                    r.endLoc.toLowerCase().includes(query);
         });
 
+        // Skip the DOM work when polling returned identical data, so the table
+        // doesn't flicker and the user doesn't lose their place every interval.
+        const signature = JSON.stringify(filtered);
+        if (signature === lastRenderedSignature) return;
+        lastRenderedSignature = signature;
+
+        tableBody.innerHTML = '';
+
         if (filtered.length === 0) {
-            emptyState.style.display = 'block';
+            showEmptyState('등록된 운행일지가 없습니다.<br>좌측 폼을 작성하여 새로 추가해 보세요.');
             return;
         }
 
@@ -251,7 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><strong>${r.distance.toLocaleString()} km</strong> <br><small style="color:var(--text-muted)">(${r.startKm.toLocaleString()}~${r.endKm.toLocaleString()})</small></td>
                 <td>${escapeHTML(r.memo || '-')}</td>
                 <td>
-                    <button class="btn-delete" data-id="${r.id}" title="삭제">
+                    <button class="btn-delete" data-id="${escapeHTML(r.id)}" title="삭제">
                         <i class="fa-solid fa-trash-can"></i>
                     </button>
                 </td>
@@ -261,13 +415,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Attach Delete Listeners
         document.querySelectorAll('.btn-delete').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const id = e.currentTarget.getAttribute('data-id');
-                if (confirm('해당 운행 기록을 삭제하시겠습니까?')) {
-                    records = records.filter(r => r.id !== id);
-                    saveRecords();
-                    renderTable(searchInput.value);
-                    updateStats();
+            btn.addEventListener('click', async (e) => {
+                const button = e.currentTarget;
+                const id = button.getAttribute('data-id');
+                if (!confirm('해당 운행 기록을 삭제하시겠습니까?')) return;
+
+                button.disabled = true;
+                try {
+                    await deleteLogById(id);
+                    await refreshLogs();
+                } catch (err) {
+                    console.error('Failed to delete log', err);
+                    showAlert(err.message || '삭제에 실패했습니다.', 'danger');
+                    button.disabled = false;
                 }
             });
         });
@@ -276,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateStats() {
         const totalKm = records.reduce((acc, r) => acc + r.distance, 0);
         const totalCount = records.length;
-        
+
         const businessCount = records.filter(r => r.category === '업무용').length;
         const businessRatio = totalCount > 0 ? ((businessCount / totalCount) * 100).toFixed(1) : 0;
         const avgKm = totalCount > 0 ? (totalKm / totalCount).toFixed(1) : 0;
@@ -311,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `"${r.date}"`,
                 `"${r.driver.replace(/"/g, '""')}"`,
                 `"${r.carNumber.replace(/"/g, '""')}"`,
-                `"${r.category}"`,
+                `"${r.category.replace(/"/g, '""')}"`,
                 `"${r.startLoc.replace(/"/g, '""')}"`,
                 `"${r.endLoc.replace(/"/g, '""')}"`,
                 r.startKm,
@@ -330,9 +490,21 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     });
 
+    // -------------------------------------------------------------
     // Initialize
-    renderTable();
+    // -------------------------------------------------------------
+
     updateStats();
+
+    if (!API_URL) {
+        showEmptyState('설정이 필요합니다.<br>config.js 파일에 Apps Script 주소를 입력해 주세요.');
+        showAlert('config.js에 Apps Script 주소가 설정되지 않았습니다.', 'danger');
+        submitButton.disabled = true;
+    } else {
+        refreshLogs({ showLoading: true });
+        startPolling();
+    }
 });
