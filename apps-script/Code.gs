@@ -1,52 +1,82 @@
 /**
- * Vehicle Usage Log App - Google Apps Script Backend
+ * Vehicle Usage Log App - Google Apps Script backend
  *
  * Deploy as a Web App:
  *   Execute as       : Me
  *   Who has access   : Anyone
  *
- * Column Structure (Matches 11 Fields):
- * 1. date (운행일)
- * 2. departTime (출발시간)
- * 3. arriveTime (도착시간)
- * 4. driver (운전자)
- * 5. odometer (계기판)
- * 6. distance (운행거리)
- * 7. destination (목적지)
- * 8. purpose (운행사유)
- * 9. passengerCount (인원)
- * 10. fuelCost (단가/주유금액 - optional)
- * 11. vehicleNo (차량선택 - whitelist: ['0704', '8318', '1213', '5486'])
+ * The field keys below are the contract with app.js on vehicle-log-app.pages.dev.
+ * Renaming a `key` breaks the frontend; renaming a `header` breaks the lookup in
+ * getHeaderIndex_(). Change either only on both sides at once.
+ *
+ * IMPORTANT (CORS): Apps Script cannot set custom CORS headers and does not
+ * handle OPTIONS preflight requests. The frontend therefore POSTs with
+ * Content-Type 'text/plain;charset=utf-8' (a CORS "simple request", so no
+ * preflight is issued). The body is still JSON and is parsed below.
+ *
+ * IMPORTANT (HTTP status): ContentService cannot set HTTP status codes.
+ * Every response is HTTP 200. The `status` value inside the error payload is
+ * informational only - clients must branch on `success`, never on res.status.
  */
 
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
 const CONFIG = {
-  SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID',
+  SPREADSHEET_ID: '1NFYc8vHInTKdGPcw6r7KIwi3x-cFUwd3ihl4BlNKJ_8',
   SHEET_NAME: '운행일지',
   TIMEZONE: 'Asia/Seoul',
   MAX_PAYLOAD_BYTES: 8192,
   LOCK_TIMEOUT_MS: 10000,
 };
 
+/**
+ * Must match ALLOWED_VEHICLES in app.js. The client checks this too, but a
+ * client check is a convenience - this is the one that binds.
+ * Adding a vehicle means editing both files.
+ */
 const ALLOWED_VEHICLES = ['0704', '8318', '1213', '5486'];
 
+/**
+ * Sheet columns. `key` is the field name used by app.js; `header` is what
+ * facility staff see in the spreadsheet. Columns are located by header text,
+ * so staff may reorder columns without breaking the API - but renaming a
+ * header will.
+ */
 const COLUMNS = [
-  { key: 'id',             header: '기록ID',        type: 'text'   },
-  { key: 'date',           header: '운행일',        type: 'text'   },
-  { key: 'departTime',     header: '출발시간',      type: 'text'   },
-  { key: 'arriveTime',     header: '도착시간',      type: 'text'   },
-  { key: 'driver',         header: '운전자',        type: 'text'   },
-  { key: 'odometer',       header: '계기판(km)',    type: 'number' },
-  { key: 'distance',       header: '운행거리(km)',  type: 'number' },
-  { key: 'destination',    header: '목적지',        type: 'text'   },
-  { key: 'purpose',        header: '운행사유',      type: 'text'   },
-  { key: 'passengerCount', header: '인원',          type: 'number' },
-  { key: 'fuelCost',       header: '단가/주유금액', type: 'number' },
-  { key: 'vehicleNo',      header: '차량선택',      type: 'text'   },
-  { key: 'createdAt',      header: '작성시각',      type: 'text'   },
+  { key: 'id',             header: '기록ID',      type: 'text'          },
+  { key: 'date',           header: '일자',         type: 'text'          },
+  { key: 'vehicleNo',      header: '차량번호',      type: 'text'          },
+  { key: 'driver',         header: '운전자',        type: 'text'          },
+  { key: 'departTime',     header: '출발시간',      type: 'text'          },
+  { key: 'arriveTime',     header: '도착시간',      type: 'text'          },
+  { key: 'odometer',       header: '계기판(km)',   type: 'number'        },
+  { key: 'distance',       header: '주행거리(km)',  type: 'number'        },
+  { key: 'destination',    header: '목적지',        type: 'text'          },
+  { key: 'purpose',        header: '운행사유',      type: 'text'          },
+  { key: 'passengerCount', header: '인원',         type: 'number'        },
+  { key: 'fuelCost',       header: '주유금액',      type: 'numberOrEmpty' },
+  { key: 'createdAt',      header: '작성시각',      type: 'text'          },
 ];
 
+// Server-side bounds. The client has matching checks; these are the binding ones.
+const LIMITS = {
+  driver: 20,
+  vehicleNo: 15,
+  destination: 30,
+  purpose: 100,
+  maxOdometer: 10000000,
+  maxDistance: 10000,
+  maxPassengers: 100,
+  maxFuelCost: 10000000,
+};
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 // ---------------------------------------------------------------------------
-// Entry Points
+// Entry points
 // ---------------------------------------------------------------------------
 
 function doGet(e) {
@@ -57,7 +87,7 @@ function doGet(e) {
     console.error('doGet failed: ' + (err && err.stack ? err.stack : err));
     return errorResponse_(
       err.code || 'SERVER_ERROR',
-      err.userMessage || '데이터를 불러오지 못했습니다. 구글 시트 헤더 설정을 확인해 주세요.',
+      err.userMessage || '데이터를 불러오지 못했습니다.',
       500
     );
   }
@@ -170,7 +200,7 @@ function handleDelete_(payload) {
 }
 
 // ---------------------------------------------------------------------------
-// Sheet Access
+// Sheet access
 // ---------------------------------------------------------------------------
 
 function getSheet_() {
@@ -181,6 +211,7 @@ function getSheet_() {
   try {
     ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   } catch (err) {
+    // Deliberately does not echo the spreadsheet ID back to the client.
     console.error('openById failed: ' + err);
     throw makeError_('CONFIG_ERROR', '스프레드시트를 열 수 없습니다. 설정을 확인하세요.');
   }
@@ -191,6 +222,7 @@ function getSheet_() {
   return sheet;
 }
 
+/** Maps each expected column key to its 0-based column index. */
 function getHeaderIndex_(sheet) {
   const lastCol = sheet.getLastColumn();
   if (lastCol === 0) {
@@ -207,7 +239,7 @@ function getHeaderIndex_(sheet) {
     else index[col.key] = i;
   });
   if (missing.length) {
-    throw makeError_('CONFIG_ERROR', '시트 헤더가 불일치합니다. Apps Script 편집기에서 setupSheet()를 실행해 헤더를 재구성해 주세요. 누락 헤더: ' + missing.join(', '));
+    throw makeError_('CONFIG_ERROR', '시트 헤더가 올바르지 않습니다. 누락: ' + missing.join(', '));
   }
   return index;
 }
@@ -230,6 +262,7 @@ function getLogs_() {
     COLUMNS.forEach(function (col) {
       log[col.key] = normalizeCell_(row[index[col.key]], col.type);
     });
+    // Rows without an ID are not app-managed records (e.g. staff scratch notes).
     if (!log.id) return;
     logs.push(log);
   });
@@ -237,16 +270,32 @@ function getLogs_() {
   return logs;
 }
 
+/**
+ * Coerces a raw cell into the type app.js expects.
+ * A human can type anything into any cell, so this must never throw.
+ * Date and time cells are formatted in CONFIG.TIMEZONE - serialising a Date
+ * straight to JSON would render it in UTC and shift the day for early-morning
+ * entries. Sheets also silently turns a typed "09:00" into a Date, which is
+ * why the time columns go through the same guard.
+ */
 function normalizeCell_(value, type) {
   if (value === null || value === undefined || value === '') {
-    return type === 'number' ? '' : '';
+    return type === 'number' ? 0 : '';
   }
   if (type === 'number') {
+    const n = Number(value);
+    return isFinite(n) ? n : 0;
+  }
+  if (type === 'numberOrEmpty') {
     const n = Number(value);
     return isFinite(n) ? n : '';
   }
   if (Object.prototype.toString.call(value) === '[object Date]') {
-    return Utilities.formatDate(value, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    // A bare time cell lands on 1899-12-30; anything else is a real date.
+    const isTimeOnly = value.getFullYear() < 1900;
+    return Utilities.formatDate(
+      value, CONFIG.TIMEZONE, isTimeOnly ? 'HH:mm' : 'yyyy-MM-dd'
+    );
   }
   return String(value);
 }
@@ -262,86 +311,91 @@ function validateLogInput_(payload) {
     return (v === null || v === undefined) ? '' : String(v).trim();
   };
 
-  // 1. Vehicle Whitelist Validation
   clean.vehicleNo = text(payload.vehicleNo);
   if (ALLOWED_VEHICLES.indexOf(clean.vehicleNo) === -1) {
-    errors.push('허용되지 않은 차량번호입니다. (0704, 8318, 1213, 5486 만 선택 가능)');
+    errors.push('올바른 차량을 선택해 주세요 (' + ALLOWED_VEHICLES.join(', ') + ' 중 선택).');
   }
 
-  // 2. Date
   clean.date = text(payload.date);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean.date)) {
-    errors.push('운행일자를 올바르게 입력해 주세요.');
+  if (!DATE_RE.test(clean.date)) {
+    errors.push('운행일을 YYYY-MM-DD 형식으로 입력해 주세요.');
   }
 
-  // 3 & 4. Times
   clean.departTime = text(payload.departTime);
   clean.arriveTime = text(payload.arriveTime);
-  if (!clean.departTime || !clean.arriveTime) {
-    errors.push('출발시간과 도착시간을 입력해 주세요.');
+  if (!TIME_RE.test(clean.departTime) || !TIME_RE.test(clean.arriveTime)) {
+    errors.push('출발/도착 시간을 HH:MM 형식으로 입력해 주세요.');
   }
 
-  // 5. Driver
   clean.driver = text(payload.driver);
-  if (!clean.driver) {
-    errors.push('운전자 성명을 입력해 주세요.');
-  }
+  if (!clean.driver) errors.push('운전자 성명을 입력해 주세요.');
+  else if (clean.driver.length > LIMITS.driver) errors.push('운전자 성명이 너무 깁니다.');
 
-  // 6. Odometer Non-negative Check
-  const odometer = Number(payload.odometer);
-  if (!isFinite(odometer) || odometer < 0) {
-    errors.push('계기판 누적거리는 0 이상의 숫자로 입력해 주세요.');
-  } else {
-    clean.odometer = odometer;
-  }
-
-  // 7. Distance Positive Check
-  const distance = Number(payload.distance);
-  if (!isFinite(distance) || distance <= 0) {
-    errors.push('운행거리는 0보다 큰 숫자로 입력해 주세요.');
-  } else {
-    clean.distance = distance;
-  }
-
-  // 8. Destination
   clean.destination = text(payload.destination);
-  if (!clean.destination) {
-    errors.push('목적지를 입력해 주세요.');
-  }
+  if (!clean.destination) errors.push('목적지를 입력해 주세요.');
+  else if (clean.destination.length > LIMITS.destination) errors.push('목적지가 너무 깁니다.');
 
-  // 9. Purpose
   clean.purpose = text(payload.purpose);
-  if (!clean.purpose) {
-    errors.push('운행사유를 입력해 주세요.');
-  }
+  if (!clean.purpose) errors.push('운행사유를 입력해 주세요.');
+  else if (clean.purpose.length > LIMITS.purpose) errors.push('운행사유가 너무 깁니다.');
 
-  // 10. Passenger Count Integer Check
   const passengerCount = Number(payload.passengerCount);
-  if (!isFinite(passengerCount) || passengerCount < 1 || Math.floor(passengerCount) !== passengerCount) {
-    errors.push('인원수는 1명 이상의 정수(자연수)로 입력해 주세요.');
+  if (!Number.isInteger(passengerCount) || passengerCount < 1) {
+    errors.push('인원수는 1명 이상의 정수로 입력해 주세요.');
+  } else if (passengerCount > LIMITS.maxPassengers) {
+    errors.push('인원수가 너무 큽니다.');
   } else {
     clean.passengerCount = passengerCount;
   }
 
-  // 11. Fuel Cost Optional & Non-negative Check
-  if (payload.fuelCost !== '' && payload.fuelCost !== null && payload.fuelCost !== undefined) {
-    const fuelCost = Number(payload.fuelCost);
+  const odometer = Number(payload.odometer);
+  if (!isFinite(odometer) || odometer < 0) {
+    errors.push('계기판 누적거리를 0 이상의 숫자로 입력해 주세요.');
+  } else if (odometer > LIMITS.maxOdometer) {
+    errors.push('계기판 값이 너무 큽니다.');
+  } else {
+    clean.odometer = odometer;
+  }
+
+  // Trusted as sent: the form collects a single odometer reading plus the trip
+  // distance, so there is no second reading to recompute it from.
+  const distance = Number(payload.distance);
+  if (!isFinite(distance) || distance <= 0) {
+    errors.push('운행거리를 0보다 큰 숫자로 입력해 주세요.');
+  } else if (distance > LIMITS.maxDistance) {
+    errors.push('운행거리가 너무 큽니다.');
+  } else {
+    clean.distance = distance;
+  }
+
+  // Optional. '' is a legitimate value and must survive as '' - app.js renders
+  // it as '-' rather than '0 원'.
+  const fuelCostRaw = payload.fuelCost;
+  if (fuelCostRaw === '' || fuelCostRaw === null || fuelCostRaw === undefined) {
+    clean.fuelCost = '';
+  } else {
+    const fuelCost = Number(fuelCostRaw);
     if (!isFinite(fuelCost) || fuelCost < 0) {
       errors.push('단가/주유금액은 0 이상의 숫자로 입력해 주세요.');
+    } else if (fuelCost > LIMITS.maxFuelCost) {
+      errors.push('단가/주유금액이 너무 큽니다.');
     } else {
       clean.fuelCost = fuelCost;
     }
-  } else {
-    clean.fuelCost = '';
   }
 
   return { valid: errors.length === 0, errors: errors, clean: clean };
 }
 
 // ---------------------------------------------------------------------------
-// Helpers & Setup
+// Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * ponytail: timestamp + random rather than a per-day sequence (log-...-001),
+ * which would need a full scan of the ID column on every insert. Switch if
+ * staff ever need human-countable sequential numbers.
+ */
 function createLogId_() {
   const stamp = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
   return 'log-' + stamp + '-' + (Math.floor(Math.random() * 9000) + 1000);
@@ -353,6 +407,10 @@ function jsonResponse_(payload) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/**
+ * `status` is echoed in the body for debugging only. The real HTTP status is
+ * always 200 - ContentService cannot set status codes.
+ */
 function errorResponse_(code, message, status) {
   return jsonResponse_({
     success: false,
@@ -367,9 +425,16 @@ function makeError_(code, userMessage) {
   return err;
 }
 
+// ---------------------------------------------------------------------------
+// One-time setup - run manually from the Apps Script editor
+// ---------------------------------------------------------------------------
+
 /**
- * Creates or updates the sheet headers to match the 11-field spec.
- * Safe to run: updates line 1 headers without deleting row data.
+ * Creates the sheet and its header row. Run once from the editor
+ * (select setupSheet -> Run). Safe to re-run: it never deletes data rows.
+ *
+ * The time columns are forced to plain text. Left as-is, Sheets parses "09:00"
+ * into a Date and the cell then renders as "오전 9:00:00".
  */
 function setupSheet() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
@@ -382,6 +447,17 @@ function setupSheet() {
     .setFontWeight('bold')
     .setBackground('#f1f5f9');
   sheet.setFrozenRows(1);
+
+  const keys = COLUMNS.map(function (c) { return c.key; });
+  const col = function (key) { return keys.indexOf(key) + 1; };
+  const rows = sheet.getMaxRows() - 1;
+
+  sheet.getRange(2, col('date'), rows, 1).setNumberFormat('yyyy-mm-dd');
+  sheet.getRange(2, col('departTime'), rows, 2).setNumberFormat('@');
+  sheet.getRange(2, col('odometer'), rows, 2).setNumberFormat('#,##0');
+  sheet.getRange(2, col('passengerCount'), rows, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, col('fuelCost'), rows, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, col('createdAt'), rows, 1).setNumberFormat('@');
 
   sheet.autoResizeColumns(1, headers.length);
   SpreadsheetApp.flush();
