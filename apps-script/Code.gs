@@ -152,7 +152,25 @@ function handleCreate_(payload) {
     COLUMNS.forEach(function (col) {
       row[index[col.key]] = record[col.key];
     });
-    sheet.appendRow(row);
+
+    /* appendRow() re-interprets everything it writes and ignores the format
+       the column already carries, so vehicle '0704' landed as the number 704
+       however setupSheet() had formatted that column. Formatting the exact
+       target cells and then writing them is what makes text stay text.
+
+       Doing it here rather than only in setupSheet() also means a sheet whose
+       setup was never re-run still stores correctly - the guarantee stops
+       depending on somebody having remembered to run a menu function.
+
+       Formats for columns this app does not own are read back and put back
+       untouched, so a column staff added beside ours keeps its own. */
+    const target = sheet.getRange(sheet.getLastRow() + 1, 1, 1, width);
+    const formats = target.getNumberFormats()[0];
+    COLUMNS.forEach(function (col) {
+      formats[index[col.key]] = formatFor_(col);
+    });
+    target.setNumberFormats([formats]);
+    target.setValues([row]);
 
     return jsonResponse_({
       success: true,
@@ -425,6 +443,24 @@ function makeError_(code, userMessage) {
   return err;
 }
 
+/**
+ * The format a column's cells must carry.
+ *
+ * Text columns have to be plain text or Sheets re-reads what it is given and
+ * the original string is gone: '0704' becomes the number 704, '09:00' becomes
+ * a Date rendered as "오전 9:00:00". `date` is the deliberate exception - a
+ * real date cell sorts and filters for staff, and normalizeCell_() turns it
+ * back into yyyy-MM-dd in CONFIG.TIMEZONE on the way out.
+ *
+ * One function because handleCreate_() and setupSheet() both need the answer
+ * and a disagreement between them would only show up as lost data.
+ */
+function formatFor_(col) {
+  if (col.key === 'date') return 'yyyy-mm-dd';
+  if (col.type === 'text') return '@';
+  return '#,##0';
+}
+
 // ---------------------------------------------------------------------------
 // One-time setup - run manually from the Apps Script editor
 // ---------------------------------------------------------------------------
@@ -448,27 +484,72 @@ function setupSheet() {
     .setBackground('#f1f5f9');
   sheet.setFrozenRows(1);
 
+  // Same formats handleCreate_() applies per row, so the two cannot drift.
+  // Existing rows are reformatted too; new ones no longer depend on this.
   const keys = COLUMNS.map(function (c) { return c.key; });
-  const col = function (key) { return keys.indexOf(key) + 1; };
   const rows = sheet.getMaxRows() - 1;
-
-  // Every text column is forced to plain text, because Sheets otherwise parses
-  // what it can and the original string is lost: '0704' becomes the number 704,
-  // '09:00' becomes a Date rendered as "오전 9:00:00". `date` is excluded on
-  // purpose - a real date cell sorts and filters properly for staff, and
-  // normalizeCell_() formats it back in CONFIG.TIMEZONE on the way out.
   COLUMNS.forEach(function (c) {
-    if (c.type === 'text' && c.key !== 'date') {
-      sheet.getRange(2, col(c.key), rows, 1).setNumberFormat('@');
-    }
+    sheet.getRange(2, keys.indexOf(c.key) + 1, rows, 1).setNumberFormat(formatFor_(c));
   });
-
-  sheet.getRange(2, col('date'), rows, 1).setNumberFormat('yyyy-mm-dd');
-  sheet.getRange(2, col('odometer'), rows, 2).setNumberFormat('#,##0');
-  sheet.getRange(2, col('passengerCount'), rows, 1).setNumberFormat('#,##0');
-  sheet.getRange(2, col('fuelCost'), rows, 1).setNumberFormat('#,##0');
 
   sheet.autoResizeColumns(1, headers.length);
   SpreadsheetApp.flush();
   console.log("'" + CONFIG.SHEET_NAME + "' 시트 준비 완료.");
+}
+
+// ---------------------------------------------------------------------------
+// Self-check - run manually from the Apps Script editor
+// ---------------------------------------------------------------------------
+
+/**
+ * Writes one record, reads it back, and deletes it.
+ *
+ * Worth its lines because this exact thing was already got wrong once:
+ * formatting the column in setupSheet() looked correct, passed review, and
+ * still stored 704. Only writing a row and reading it back proves it.
+ *
+ * Uses the real sheet - there is no other sheet to use - so it always removes
+ * what it wrote, including when an assertion fails.
+ */
+function testLeadingZero() {
+  const probe = {
+    vehicleNo: '0704',
+    date: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd'),
+    departTime: '09:00',
+    arriveTime: '09:30',
+    driver: 'SELFTEST',
+    passengerCount: 1,
+    odometer: 1,
+    distance: 1,
+    destination: 'SELFTEST',
+    purpose: 'SELFTEST',
+    fuelCost: '',
+  };
+
+  const created = JSON.parse(handleCreate_(probe).getContent());
+  if (!created.success) throw new Error('write failed: ' + JSON.stringify(created.error));
+  const id = created.data.id;
+
+  try {
+    const stored = getLogs_().filter(function (r) { return r.id === id; })[0];
+    if (!stored) throw new Error('row not found after write: ' + id);
+
+    const checks = [
+      ['vehicleNo', stored.vehicleNo, '0704'],
+      ['departTime', stored.departTime, '09:00'],
+      ['arriveTime', stored.arriveTime, '09:30'],
+      ['date', stored.date, probe.date],
+      ['fuelCost', stored.fuelCost, ''],
+    ];
+    const failed = checks.filter(function (c) { return c[1] !== c[2]; });
+    if (failed.length) {
+      throw new Error('FAILED\n' + failed.map(function (c) {
+        return '  ' + c[0] + ': got ' + JSON.stringify(c[1]) +
+          ', expected ' + JSON.stringify(c[2]);
+      }).join('\n'));
+    }
+    console.log('PASSED - 0704 stays 0704, times stay strings, empty 주유금액 stays empty.');
+  } finally {
+    handleDelete_({ id: id });
+  }
 }
