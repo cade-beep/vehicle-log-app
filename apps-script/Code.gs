@@ -452,12 +452,21 @@ function setupSheet() {
   const col = function (key) { return keys.indexOf(key) + 1; };
   const rows = sheet.getMaxRows() - 1;
 
+  // Every text column is forced to plain text, because Sheets otherwise parses
+  // what it can and the original string is lost: '0704' becomes the number 704,
+  // '09:00' becomes a Date rendered as "오전 9:00:00". `date` is excluded on
+  // purpose - a real date cell sorts and filters properly for staff, and
+  // normalizeCell_() formats it back in CONFIG.TIMEZONE on the way out.
+  COLUMNS.forEach(function (c) {
+    if (c.type === 'text' && c.key !== 'date') {
+      sheet.getRange(2, col(c.key), rows, 1).setNumberFormat('@');
+    }
+  });
+
   sheet.getRange(2, col('date'), rows, 1).setNumberFormat('yyyy-mm-dd');
-  sheet.getRange(2, col('departTime'), rows, 2).setNumberFormat('@');
   sheet.getRange(2, col('odometer'), rows, 2).setNumberFormat('#,##0');
   sheet.getRange(2, col('passengerCount'), rows, 1).setNumberFormat('#,##0');
   sheet.getRange(2, col('fuelCost'), rows, 1).setNumberFormat('#,##0');
-  sheet.getRange(2, col('createdAt'), rows, 1).setNumberFormat('@');
 
   sheet.autoResizeColumns(1, headers.length);
   SpreadsheetApp.flush();
