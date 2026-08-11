@@ -279,56 +279,47 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 1. Vehicle Whitelist
         if (!vehicleNo || ALLOWED_VEHICLES.indexOf(vehicleNo) === -1) {
-            showAlert('올바른 차량을 선택해 주세요 (0704, 8318, 1213, 5486 중 선택).', 'danger');
-            return;
+            return reject(vehicleNoSelect, '올바른 차량을 선택해 주세요 (0704, 8318, 1213, 5486 중 선택).');
         }
         // 2. Date Validation
         if (!DATE_RE.test(date)) {
-            showAlert('운행일을 YYYY-MM-DD 형식의 숫자로 입력해 주세요 (예: 2026-08-04).', 'danger');
-            return;
+            return reject(driveDateInput, '운행일을 YYYY-MM-DD 형식의 숫자로 입력해 주세요 (예: 2026-08-04).');
         }
         // 3. Time Validation
         if (!TIME_RE.test(departTime) || !TIME_RE.test(arriveTime)) {
-            showAlert('출발/도착 시간을 HH:MM 형식의 숫자로 입력해 주세요 (예: 09:00).', 'danger');
-            return;
+            const bad = TIME_RE.test(departTime) ? arriveTimeInput : departTimeInput;
+            return reject(bad, '출발/도착 시간을 HH:MM 형식의 숫자로 입력해 주세요 (예: 09:00).');
         }
         // 4. Driver Validation
         if (!driver) {
-            showAlert('운전자 성명을 입력해 주세요.', 'danger');
-            return;
+            return reject(driverNameInput, '운전자 성명을 입력해 주세요.');
         }
         // 5. Passenger Count Integer Check
         if (!Number.isInteger(passengerCountNum) || passengerCountNum < 1) {
-            showAlert('인원수는 1명 이상의 정수(자연수)로 입력해 주세요.', 'danger');
-            return;
+            return reject(passengerCountInput, '인원수는 1명 이상의 정수(자연수)로 입력해 주세요.');
         }
         // 6. Odometer Non-negative Check
         if (isNaN(odometerNum) || odometerNum < 0) {
-            showAlert('계기판 누적거리를 0 이상의 숫자로 입력해 주세요.', 'danger');
-            return;
+            return reject(odometerInput, '계기판 누적거리를 0 이상의 숫자로 입력해 주세요.');
         }
         // 7. Distance Positive Check
         if (isNaN(distanceNum) || distanceNum <= 0) {
-            showAlert('운행거리를 0보다 큰 올바른 숫자로 입력해 주세요.', 'danger');
-            return;
+            return reject(distanceInput, '운행거리를 0보다 큰 올바른 숫자로 입력해 주세요.');
         }
         // 8. Destination Validation
         if (!destination) {
-            showAlert('목적지를 입력해 주세요.', 'danger');
-            return;
+            return reject(destinationInput, '목적지를 입력해 주세요.');
         }
         // 9. Purpose Validation
         if (!purpose) {
-            showAlert('운행사유를 입력해 주세요.', 'danger');
-            return;
+            return reject(purposeInput, '운행사유를 입력해 주세요.');
         }
         // 10. Fuel Cost Optional & Non-negative Check
         let fuelCost = '';
         if (fuelCostRaw !== '') {
             const fuelCostNum = Number(fuelCostRaw);
             if (isNaN(fuelCostNum) || fuelCostNum < 0) {
-                showAlert('단가/주유금액은 0 이상의 숫자로 입력해 주세요.', 'danger');
-                return;
+                return reject(fuelCostInput, '단가/주유금액은 0 이상의 숫자로 입력해 주세요.');
             }
             fuelCost = fuelCostNum;
         }
@@ -378,6 +369,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function hideAlert() {
         formAlert.className = 'alert-box hidden';
+        form.querySelectorAll('[aria-invalid]').forEach((el) => el.removeAttribute('aria-invalid'));
+    }
+
+    /**
+     * Rejects a submission and points at the field that caused it.
+     *
+     * The alert renders at the bottom of the form, directly above the save
+     * button. On a phone the form is around three screens tall, so a message
+     * naming the problem without moving to it leaves the driver scrolling back
+     * up hunting for which of eleven inputs it meant. Marking, focusing and
+     * scrolling are one concern, so they live in one place rather than being
+     * repeated across the ten checks above.
+     */
+    function reject(field, msg) {
+        showAlert(msg, 'danger');
+        if (!field) return;
+        field.setAttribute('aria-invalid', 'true');
+        field.focus({ preventScroll: true });
+        field.scrollIntoView({
+            block: 'center',
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                ? 'auto' : 'smooth',
+        });
     }
 
     // -------------------------------------------------------------
@@ -391,7 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody.innerHTML = '';
 
         if (records.length === 0) {
-            showEmptyState('등록된 운행일지가 없습니다.<br>좌측 폼을 작성하여 새로 추가해 보세요.');
+            showEmptyState('등록된 운행일지가 없습니다.<br>양식을 작성하여 새로 추가해 보세요.');
             return;
         }
 
@@ -415,9 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td data-label="인원">${r.passengerCount} 명</td>
                 <td data-label="주유금액">${formattedFuelCost}</td>
                 <td class="col-actions">
-                    <button class="btn-delete" data-id="${escapeHTML(r.id)}" title="삭제">
-                        <i class="fa-solid fa-trash-can"></i>
-                    </button>
+                    <button class="btn-delete" data-id="${escapeHTML(r.id)}"
+                            aria-label="${escapeHTML(r.date)} ${escapeHTML(r.vehicleNo)} 기록 삭제">삭제</button>
                 </td>
             `;
             tableBody.appendChild(tr);

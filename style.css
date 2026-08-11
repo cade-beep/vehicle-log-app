@@ -1,153 +1,193 @@
-/* Modern Responsive CSS Design System */
+﻿/* ─────────────────────────────────────────────────────────────
+   차량 사용일지 - paper & ink
+
+   A 운행일지 is a ledger before it is an app, so the interface is
+   built like one: a bounded slip you fill in, an open record you
+   read. One accent (seal vermilion, the red of a document stamp),
+   used only where it means something - the active object, the
+   focus ring, an error.
+
+   One radius (--r), applied everywhere. Table cells stay square.
+   ───────────────────────────────────────────────────────────── */
+
 :root {
-    --bg-main: #0f172a;
-    --bg-card: rgba(30, 41, 59, 0.7);
-    --bg-card-hover: rgba(30, 41, 59, 0.9);
-    --border-color: rgba(255, 255, 255, 0.1);
-    
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
-    --primary-glow: rgba(59, 130, 246, 0.4);
-    
-    --success: #10b981;
-    --danger: #ef4444;
-    
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
-    --text-dark: #64748b;
-    
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 18px;
-    
-    --shadow-soft: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-    --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.25);
-    
-    --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    color-scheme: light dark;
+
+    --paper:       #f4f4f1;
+    --surface:     #ffffff;
+    --surface-2:   #fafaf8;
+    --ink:         #1a1a1a;
+    --ink-2:       #5c5c5a;
+    /* Was #70706c, which measured 4.51:1 on white - one hundredth above the
+       4.5 AA floor. Any future tweak to a surface tint would have pushed the
+       hints, units and placeholders that all share this token under it. */
+    --ink-3:       #666662;
+    --rule:        #e3e3de;
+    --rule-2:      #cdcdc6;
+
+    --seal:        #c8402c;
+    --seal-strong: #a8321f;
+    --seal-wash:   #fbeeeb;
+    --on-seal:     #ffffff;
+
+    --ok:          #2f6b46;
+    --ok-wash:     #eef5f0;
+
+    --r: 4px;
+    --t: 130ms cubic-bezier(.2, 0, .2, 1);
 }
 
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --paper:       #121214;
+        --surface:     #1a1a1d;
+        --surface-2:   #202024;
+        --ink:         #ececea;
+        --ink-2:       #a2a29e;
+        --ink-3:       #8a8a86;
+        --rule:        #2c2c31;
+        --rule-2:      #3d3d43;
 
-body {
-    background: radial-gradient(circle at top right, #1e1b4b, #0f172a 60%);
-    color: var(--text-main);
-    min-height: 100vh;
-    padding: 24px 16px;
-    display: flex;
-    justify-content: center;
-}
+        --seal:        #e56a52;
+        --seal-strong: #f2836b;
+        --seal-wash:   #2b1a16;
+        --on-seal:     #17110f;
 
-.app-container {
-    width: 100%;
-    max-width: 1350px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-}
-
-/* Header */
-.app-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px 24px;
-    background: var(--bg-card);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-soft);
-}
-
-.brand {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.brand-icon {
-    width: 48px;
-    height: 48px;
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    color: #fff;
-    box-shadow: var(--shadow-glow);
-}
-
-.brand h1 {
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-}
-
-.subtitle {
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-/* Main Layout */
-.main-content {
-    display: grid;
-    grid-template-columns: 420px 1fr;
-    gap: 24px;
-}
-
-@media (max-width: 1024px) {
-    .main-content {
-        grid-template-columns: 1fr;
+        --ok:          #6fc292;
+        --ok-wash:     #16241c;
     }
 }
 
-/* Card Styles */
-.card {
-    background: var(--bg-card);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: 24px;
-    box-shadow: var(--shadow-soft);
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+                 system-ui, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid var(--border-color);
+h1, h2, p { margin: 0; }
+
+.app {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px 56px;
 }
 
-.card-header h2 {
-    font-size: 18px;
-    font-weight: 600;
+/* Hidden from the eye, still read aloud. Deliberately left in normal flow:
+   the usual position:absolute version has no positioned ancestor inside the
+   ledger, so its containing block sits above .table-wrapper and it escapes
+   that element's overflow clip - dragging the whole page ~135px wider than
+   the viewport at tablet widths. In flow it costs one pixel and cannot
+   stretch anything. */
+.sr-only {
+    display: inline-block;
+    width: 1px; height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ── Topbar ─────────────────────────────────────────────────── */
+
+.topbar {
     display: flex;
     align-items: center;
+    height: 64px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--rule);
+}
+
+.mark {
+    display: flex;
+    align-items: baseline;
     gap: 10px;
-    color: var(--text-main);
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -.022em;
 }
 
-.card-badge {
-    background: rgba(59, 130, 246, 0.2);
-    color: var(--primary);
-    font-size: 11px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 12px;
+.mark-sub {
+    font-size: 12px;
+    font-weight: 450;
+    letter-spacing: 0;
+    color: var(--ink-3);
 }
 
-/* Form Styles */
-.log-form {
+/* ── Sheet: a fixed slip beside an open ledger ──────────────── */
+
+.sheet {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+}
+
+.slip,
+.ledger {
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+}
+
+/* The slip is where you act, so it carries the accent. */
+.slip {
+    padding: 22px;
+    border-top: 2px solid var(--seal);
+}
+
+/* The ledger is the record, so it carries ink. The table bleeds to
+   its edges - no inner padding - which is what keeps the two panels
+   from reading as a matched pair of cards. */
+.ledger {
+    border-top: 2px solid var(--ink);
+}
+
+.panel-head {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--rule);
+}
+
+.slip .panel-head {
+    padding-bottom: 14px;
+    margin-bottom: 18px;
+}
+
+.ledger .panel-head {
+    padding: 16px 18px;
+}
+
+.panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+}
+
+.last-updated {
+    font-size: 11.5px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ── Form ───────────────────────────────────────────────────── */
+
+.log-form {
+    display: grid;
+    gap: 14px;
 }
 
 .form-row {
@@ -156,116 +196,169 @@ body {
     gap: 12px;
 }
 
-@media (max-width: 480px) {
-    .form-row {
-        grid-template-columns: 1fr;
-    }
-}
-
-.form-group {
-    display: flex;
-    flex-direction: column;
+.field {
+    display: grid;
     gap: 6px;
+    min-width: 0;
 }
 
-.form-group label {
-    font-size: 13px;
+.field label {
+    font-size: 12px;
+    font-weight: 550;
+    color: var(--ink-2);
+}
+
+/* Ten of eleven fields are required, so the optional one is marked
+   instead of asterisking the rest. */
+.opt {
+    margin-left: 5px;
+    padding: 1px 5px;
+    border: 1px solid var(--rule-2);
+    border-radius: var(--r);
+    font-size: 10.5px;
     font-weight: 500;
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    color: var(--ink-3);
 }
 
-.required-star {
-    color: #f87171;
-    font-weight: bold;
+.hint {
+    font-size: 11.5px;
+    color: var(--ink-3);
 }
 
-.optional-text {
-    font-size: 11px;
-    color: var(--text-dark);
-}
-
-input, select, textarea {
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    padding: 10px 14px;
-    color: var(--text-main);
-    font-size: 14px;
-    outline: none;
-    transition: var(--transition);
-}
-
-select option {
-    background: #1e293b;
-    color: #f8fafc;
-}
-
-input:focus, select:focus, textarea:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-glow);
-}
-
-/* Buttons */
-.btn {
-    padding: 10px 18px;
-    border-radius: var(--radius-sm);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition: var(--transition);
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, var(--primary), #2563eb);
-    color: white;
-    box-shadow: var(--shadow-glow);
-}
-
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px var(--primary-glow);
-}
-
-.btn-block {
+input,
+select {
     width: 100%;
-    margin-top: 8px;
-    padding: 14px;
+    min-width: 0;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--rule-2);
+    border-radius: var(--r);
+    padding: 9px 11px;
+    transition: border-color var(--t), background-color var(--t);
 }
 
-/* Alert Box */
+input::placeholder { color: var(--ink-3); }
+
+input:hover:not(:focus),
+select:hover:not(:focus) { border-color: var(--ink-3); }
+
+:where(input, select, button):focus-visible {
+    outline: 2px solid var(--seal);
+    outline-offset: 1px;
+}
+
+/* The rejected field, marked where the driver is looking. The alert names the
+   problem; this says which of eleven inputs it meant. Colour is not the only
+   signal - the field is also focused, so it carries the focus ring too. */
+:is(input, select)[aria-invalid="true"] {
+    border-color: var(--seal);
+    background: var(--seal-wash);
+}
+
+/* Numbers in a log need to line up column to column. */
+.num { font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+
+/* Spinners invite mis-clicks on an odometer field, and they collide
+   with the unit suffix. */
+input[type=number] { -moz-appearance: textfield; }
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.field-unit { position: relative; display: grid; }
+
+.field-unit input { padding-right: 40px; }
+
+.field-unit .unit {
+    position: absolute;
+    top: 50%;
+    right: 11px;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: var(--ink-3);
+    pointer-events: none;
+}
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+
 .alert-box {
-    padding: 12px 16px;
-    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--r);
     font-size: 13px;
-    font-weight: 500;
+    line-height: 1.5;
 }
 
 .alert-box.danger {
-    background: rgba(239, 68, 68, 0.15);
-    color: #fca5a5;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: var(--seal-wash);
+    border-color: var(--seal);
+    color: var(--seal-strong);
 }
 
 .alert-box.success {
-    background: rgba(16, 185, 129, 0.15);
-    color: #6ee7b7;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    background: var(--ok-wash);
+    border-color: var(--ok);
+    color: var(--ok);
 }
 
 .hidden { display: none; }
 
-/* Table & Wrapper */
+/* ── Buttons ────────────────────────────────────────────────── */
+
+.btn-primary {
+    margin-top: 4px;
+    width: 100%;
+    padding: 12px 16px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--on-seal);
+    background: var(--seal);
+    border: 1px solid var(--seal);
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: background-color var(--t), border-color var(--t);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--seal-strong);
+    border-color: var(--seal-strong);
+}
+
+/* A press, not a lift. */
+.btn-primary:active:not(:disabled) { transform: translateY(1px); }
+
+.btn-primary:disabled {
+    background: var(--rule);
+    border-color: var(--rule-2);
+    color: var(--ink-2);
+    cursor: not-allowed;
+}
+
+.btn-delete {
+    padding: 4px 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--ink-3);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: color var(--t), border-color var(--t);
+}
+
+.btn-delete:hover:not(:disabled) {
+    color: var(--seal);
+    border-color: var(--seal);
+}
+
+.btn-delete:disabled { opacity: .5; cursor: progress; }
+
+/* ── Ledger table ───────────────────────────────────────────── */
+
 .table-wrapper {
     overflow-x: auto;
-    border-radius: var(--radius-sm);
     container-type: inline-size;
     container-name: tablewrap;
 }
@@ -279,48 +372,76 @@ input:focus, select:focus, textarea:focus {
 }
 
 .log-table th {
-    padding: 12px 14px;
-    background: rgba(15, 23, 42, 0.7);
-    color: var(--text-muted);
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--rule-2);
+    font-size: 11.5px;
     font-weight: 600;
-    border-bottom: 1px solid var(--border-color);
+    color: var(--ink-2);
 }
 
 .log-table td {
-    padding: 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--rule);
 }
 
-.log-table tbody tr:hover {
-    background: rgba(255, 255, 255, 0.03);
+/* Figures stay on one line; prose is free to wrap. Eleven nowrap
+   columns would otherwise push a scrollbar onto the main record. */
+.log-table :is(th, td):is(:nth-child(4), :nth-child(7), :nth-child(8)) {
+    white-space: normal;
+    min-width: 7em;
 }
 
+.log-table tbody tr:last-child td { border-bottom: none; }
+.log-table tbody tr:hover td { background: var(--surface-2); }
+
+/* Dates and clock times read as figures. */
+.log-table :is(th, td):is(:nth-child(2), :nth-child(3)) {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Quantities right-align so digits stack. */
+.log-table :is(th, td):is(:nth-child(5), :nth-child(6), :nth-child(9), :nth-child(10)) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.log-table .col-actions { width: 1%; text-align: right; }
+
+/* The plate number is the row's identity, so it gets a stamped box. */
 .vehicle-tag {
     display: inline-block;
-    padding: 4px 8px;
-    background: rgba(59, 130, 246, 0.2);
-    color: #93c5fd;
-    border-radius: 6px;
+    padding: 2px 6px;
+    background: var(--surface);
+    border: 1px solid var(--rule-2);
+    border-radius: var(--r);
     font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .04em;
+    color: var(--ink);
 }
 
-.btn-delete {
-    background: transparent;
-    border: none;
-    color: var(--text-dark);
-    cursor: pointer;
-    font-size: 15px;
-    transition: var(--transition);
+/* Older rows can carry a blank plate; an empty stamped box reads as
+   a rendering fault, so it collapses instead. */
+.vehicle-tag:empty { display: none; }
+
+.empty-state {
+    padding: 44px 24px;
+    text-align: center;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--ink-3);
 }
 
-.btn-delete:hover {
-    color: var(--danger);
-}
-
-/* Below 560px of the table's own width, rows become label:value cards
-   instead of squeezing/scrolling a wide table. */
-@container tablewrap (max-width: 560px) {
-    .log-table, .log-table thead, .log-table tbody, .log-table tr, .log-table td {
+/* Below 620px of the table's OWN width, rows become label:value
+   records rather than a squeezed horizontal scroll. */
+@container tablewrap (max-width: 620px) {
+    .log-table,
+    .log-table thead,
+    .log-table tbody,
+    .log-table tr,
+    .log-table td {
         display: block;
         width: 100%;
     }
@@ -328,65 +449,61 @@ input:focus, select:focus, textarea:focus {
     .log-table thead { display: none; }
 
     .log-table tbody tr {
-        border: 1px solid var(--border-color);
-        border-radius: var(--radius-sm);
-        margin-bottom: 10px;
-        padding: 4px 0;
+        margin: 12px;
+        width: auto;
+        border: 1px solid var(--rule);
+        border-radius: var(--r);
     }
 
     .log-table td {
         display: flex;
+        align-items: baseline;
         justify-content: space-between;
-        align-items: center;
-        gap: 12px;
+        gap: 16px;
+        padding: 9px 12px;
+        text-align: right;
         white-space: normal;
-        border-bottom: 1px dashed var(--border-color);
+        border-bottom: 1px solid var(--rule);
     }
 
-    .log-table tr td:last-child { border-bottom: none; }
+    .log-table tbody tr td:last-child { border-bottom: none; }
+    .log-table tbody tr:hover td { background: transparent; }
 
     .log-table td::before {
         content: attr(data-label);
-        font-size: 12px;
+        flex: none;
+        font-size: 11.5px;
         font-weight: 600;
-        color: var(--text-muted);
-        flex-shrink: 0;
+        color: var(--ink-2);
+        text-align: left;
     }
 
     .log-table td.col-actions {
+        width: auto;
         justify-content: flex-end;
     }
 
-    .log-table td.col-actions::before {
-        content: "";
+    .log-table td.col-actions::before { content: ""; }
+}
+
+/* ── Narrow viewports ───────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+    .sheet { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+    .app { padding: 0 16px 40px; }
+    .topbar { height: 56px; margin-bottom: 20px; }
+    .mark { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .slip { padding: 18px 16px; }
+    .form-row { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
     }
-}
-
-/* Empty State */
-.empty-state {
-    text-align: center;
-    padding: 48px 24px;
-    color: var(--text-muted);
-}
-
-.empty-icon {
-    font-size: 40px;
-    color: var(--text-dark);
-    margin-bottom: 12px;
-}
-
-/* Footer */
-.app-footer {
-    text-align: center;
-    padding: 16px;
-    color: var(--text-dark);
-    font-size: 12px;
-}
-
-/* 목록 최근 갱신 시각 */
-.last-updated {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-    margin-left: 0.75rem;
-    white-space: nowrap;
 }
