@@ -29,3 +29,6 @@ build/
 google-services.json
 firebase-credentials.json
 local.properties
+
+# 감사 스크립트가 생성하는 스크린샷. 결과물이지 소스가 아니다.
+tests/screenshots/
