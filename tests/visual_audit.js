@@ -196,6 +196,118 @@ const FIND_OVERFLOW = function () {
   };
 };
 
+/**
+ * Contrast and hit-target audit.
+ *
+ * Both thresholds come from WCAG 2.2 level AA: 4.5:1 for body text (3:1 once
+ * it is large), and 24x24 CSS px for anything you have to hit. A control can
+ * look fine in a screenshot and still fail either one, which is the point of
+ * measuring rather than eyeballing.
+ */
+const AUDIT_A11Y = function () {
+  const parse = function (c) {
+    const m = c.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+    return m ? [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : +m[4]] : null;
+  };
+
+  const lum = function (rgb) {
+    const f = rgb.slice(0, 3).map(function (v) {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+  };
+
+  const over = function (fg, bg) {
+    const a = fg[3];
+    return [0, 1, 2].map(function (i) { return fg[i] * a + bg[i] * (1 - a); }).concat(1);
+  };
+
+  // The nearest ancestor that actually paints something.
+  const bgOf = function (el) {
+    for (let p = el; p; p = p.parentElement) {
+      const c = parse(getComputedStyle(p).backgroundColor);
+      if (c && c[3] > 0) return c[3] === 1 ? c : over(c, bgOf(p.parentElement || document.body));
+    }
+    return [255, 255, 255, 1];
+  };
+
+  const ratio = function (a, b) {
+    const l1 = lum(a);
+    const l2 = lum(b);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  };
+
+  const label = function (el) {
+    return el.tagName.toLowerCase() +
+      (el.id ? '#' + el.id : '') +
+      (el.className && typeof el.className === 'string'
+        ? '.' + el.className.trim().split(/\s+/).join('.') : '');
+  };
+
+  const lowContrast = [];
+  const smallTargets = [];
+  // Every measurement, kept so a run can be spot-checked. A contrast test that
+  // silently measures nothing reports a clean sheet, which is worse than no
+  // test at all - AUDIT_VERBOSE=1 prints the tightest ratios to prove it looked.
+  const measured = [];
+  const seenC = new Set();
+  const seenT = new Set();
+
+  document.querySelectorAll('body *').forEach(function (el) {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    if (r.width === 0 || r.height === 0 || cs.visibility === 'hidden') return;
+
+    // Contrast: only elements that render their own text.
+    const own = Array.prototype.filter.call(el.childNodes, function (n) {
+      return n.nodeType === 3 && n.textContent.trim();
+    });
+    if (own.length) {
+      const fg = parse(cs.color);
+      if (fg) {
+        const bg = bgOf(el);
+        const got = ratio(fg[3] < 1 ? over(fg, bg) : fg, bg);
+        const size = parseFloat(cs.fontSize);
+        const bold = parseInt(cs.fontWeight, 10) >= 700;
+        const large = size >= 24 || (bold && size >= 18.66);
+        const need = large ? 3 : 4.5;
+        const key = label(el);
+        measured.push({ el: key, ratio: Math.round(got * 100) / 100, need: need });
+        if (got < need && !seenC.has(key)) {
+          seenC.add(key);
+          lowContrast.push({
+            el: key,
+            text: own.map(function (n) { return n.textContent.trim(); }).join(' ').slice(0, 24),
+            ratio: Math.round(got * 100) / 100,
+            need: need,
+          });
+        }
+      }
+    }
+
+    // Hit targets.
+    const tag = el.tagName.toLowerCase();
+    const hit = tag === 'button' || tag === 'select' || tag === 'a' ||
+      (tag === 'input' && el.type !== 'hidden') || el.getAttribute('role') === 'button';
+    if (hit && (r.width < 24 || r.height < 24)) {
+      const key = label(el);
+      if (!seenT.has(key)) {
+        seenT.add(key);
+        smallTargets.push({ el: key, size: Math.round(r.width) + 'x' + Math.round(r.height) });
+      }
+    }
+  });
+
+  measured.sort(function (a, b) { return a.ratio - b.ratio; });
+  return {
+    lowContrast: lowContrast,
+    smallTargets: smallTargets,
+    measuredCount: measured.length,
+    tightest: measured.slice(0, 8),
+  };
+};
+
 // ---------------------------------------------------------------------------
 
 async function run() {
@@ -245,9 +357,15 @@ async function run() {
     }
 
     const result = await page.evaluate(FIND_OVERFLOW);
+    const a11y = await page.evaluate(AUDIT_A11Y);
     await page.screenshot({ path: path.join(SHOTS, s.name + '.png'), fullPage: true });
 
-    report.push({ scenario: s.name, viewport: s.viewport.width + 'x' + s.viewport.height, ...result });
+    report.push({
+      scenario: s.name,
+      viewport: s.viewport.width + 'x' + s.viewport.height,
+      ...result,
+      ...a11y,
+    });
     await page.close();
   }
 
@@ -261,7 +379,8 @@ async function run() {
     const wider = r.pageScrollWidth > r.docWidth + 1;
     // Elements inside a scroller only matter when the page itself is spilling.
     const real = r.offenders.filter(function (o) { return !o.inScroller; });
-    const ok = real.length === 0 && !wider;
+    const ok = real.length === 0 && !wider &&
+      r.lowContrast.length === 0 && r.smallTargets.length === 0;
     if (!ok) failures++;
     console.log('\n' + (ok ? 'PASS' : 'FAIL') + '  ' + r.scenario + '  (' + r.viewport + ')');
     if (wider) {
@@ -272,7 +391,19 @@ async function run() {
         '  [overflow-x:' + o.overflowX + (o.inScroller ? ', in scroller' : '') + ']');
     }
     if (r.offenders.length > 12) console.log('  ... and ' + (r.offenders.length - 12) + ' more');
-    if (!ok) {
+    for (const c of r.lowContrast) {
+      console.log('  contrast ' + c.ratio + ':1 (needs ' + c.need + ')  ' + c.el + '  "' + c.text + '"');
+    }
+    for (const t of r.smallTargets) {
+      console.log('  hit target ' + t.size + ' (needs 24x24)  ' + t.el);
+    }
+    if (process.env.AUDIT_VERBOSE) {
+      console.log('  measured ' + r.measuredCount + ' text nodes; tightest:');
+      for (const m of r.tightest) {
+        console.log('    ' + String(m.ratio).padStart(6) + ':1 (needs ' + m.need + ')  ' + m.el);
+      }
+    }
+    if (wider || real.length) {
       for (const c of r.chain) {
         console.log('    ' + c.sel.padEnd(16) + ' w=' + String(c.width).padStart(5) +
           '  scrollW=' + String(c.scrollWidth).padStart(5) +
