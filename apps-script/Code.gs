@@ -469,8 +469,9 @@ function formatFor_(col) {
  * Creates the sheet and its header row. Run once from the editor
  * (select setupSheet -> Run). Safe to re-run: it never deletes data rows.
  *
- * The time columns are forced to plain text. Left as-is, Sheets parses "09:00"
- * into a Date and the cell then renders as "오전 9:00:00".
+ * It also reformats existing rows, which is the only reason to re-run it now -
+ * handleCreate_() formats each row as it writes, so new records are correct
+ * whether or not this was ever run.
  */
 function setupSheet() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
