@@ -505,6 +505,13 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin
    threshold left 1080-1366 splitting a ledger too narrow to hold its table. */
 @media (max-width: 1365px) {
     .sheet { grid-template-columns: 1fr; }
+
+    /* Stacked, the slip has the whole width and no reason to use it. A 1,190px
+       box holding "09:00" puts the value a screen away from its own label, and
+       nothing about a form gets easier to fill by being wider. The ledger below
+       does want the full width - it has eleven columns to place - so the cap is
+       on the slip alone. 560 is a readable field width, not a spec number. */
+    .slip { max-width: 560px; }
 }
 
 @media (max-width: 560px) {

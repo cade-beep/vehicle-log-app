@@ -279,8 +279,10 @@ const AUDIT_A11Y = function () {
   // silently measures nothing reports a clean sheet, which is worse than no
   // test at all - AUDIT_VERBOSE=1 prints the tightest ratios to prove it looked.
   const measured = [];
+  const wideFields = [];
   const seenC = new Set();
   const seenT = new Set();
+  const seenW = new Set();
 
   document.querySelectorAll('body *').forEach(function (el) {
     const r = el.getBoundingClientRect();
@@ -314,6 +316,19 @@ const AUDIT_A11Y = function () {
       }
     }
 
+    // Fields stretched past readable width. Nothing overflows and nothing is
+    // clipped, so the layout checks stay quiet, but a 1,190px box holding
+    // "09:00" drags the eye a screen away from its own label. 560 is the same
+    // reasoning as a line-length limit, not a spec number.
+    const t = el.tagName.toLowerCase();
+    if ((t === 'input' || t === 'select') && el.type !== 'hidden' && r.width > 560) {
+      const key = label(el);
+      if (!seenW.has(key)) {
+        seenW.add(key);
+        wideFields.push({ el: key, width: Math.round(r.width) });
+      }
+    }
+
     // Hit targets.
     const tag = el.tagName.toLowerCase();
     const hit = tag === 'button' || tag === 'select' || tag === 'a' ||
@@ -331,6 +346,7 @@ const AUDIT_A11Y = function () {
   return {
     lowContrast: lowContrast,
     smallTargets: smallTargets,
+    wideFields: wideFields,
     measuredCount: measured.length,
     tightest: measured.slice(0, 8),
   };
@@ -428,7 +444,8 @@ async function run() {
     const rejectionOk = !rj || (rj.marked && rj.focused && rj.inView);
     const clipped = r.ledger && r.ledger.clipped;
     const ok = real.length === 0 && !wider && !clipped &&
-      r.lowContrast.length === 0 && r.smallTargets.length === 0 && rejectionOk;
+      r.lowContrast.length === 0 && r.smallTargets.length === 0 &&
+      r.wideFields.length === 0 && rejectionOk;
     if (!ok) failures++;
     console.log('\n' + (ok ? 'PASS' : 'FAIL') + '  ' + r.scenario + '  (' + r.viewport + ')');
     if (wider) {
@@ -444,6 +461,9 @@ async function run() {
     }
     for (const t of r.smallTargets) {
       console.log('  hit target ' + t.size + ' (needs 24x24)  ' + t.el);
+    }
+    for (const w of r.wideFields) {
+      console.log('  field ' + w.width + 'px wide (max 560)  ' + w.el);
     }
     if (r.ledger) {
       console.log('  ledger: ' + (r.ledger.cardMode ? 'cards' : 'table') +
