@@ -434,9 +434,18 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin
     color: var(--ink-3);
 }
 
-/* Below 620px of the table's OWN width, rows become label:value
-   records rather than a squeezed horizontal scroll. */
-@container tablewrap (max-width: 620px) {
+/* Below 940px of the table's OWN width, rows become label:value records
+   rather than a squeezed horizontal scroll.
+
+   940 is not a round number picked by eye - it is measured. Eleven columns
+   with a full Korean address in 목적지 need 902px, so any container between
+   the old 620px threshold and 902px kept the table and let it overflow: the
+   운행사유 text was clipped mid-glyph and 인원, 주유금액 and the delete button
+   sat off-screen behind a horizontal scroll nobody signposted. iPad Mini and
+   the 1100px split both landed in that gap. The threshold now sits above what
+   the table actually needs, so every width gets either a table that fits or
+   cards - never a table that does not. */
+@container tablewrap (max-width: 940px) {
     .log-table,
     .log-table thead,
     .log-table tbody,
@@ -488,7 +497,13 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin
 
 /* ── Narrow viewports ───────────────────────────────────────── */
 
-@media (max-width: 1080px) {
+/* Stack once the split would starve the ledger.
+   .app caps at 1400 and pads 24 a side, the slip is a fixed 330 and the gap
+   28, so the ledger gets (viewport - 406). Keeping two columns below 1366px
+   hands it under 960 - not enough for the 902px table plus slack - while
+   stacking gives it (viewport - 48) and the table fits again. The old 1080px
+   threshold left 1080-1366 splitting a ledger too narrow to hold its table. */
+@media (max-width: 1365px) {
     .sheet { grid-template-columns: 1fr; }
 }
 

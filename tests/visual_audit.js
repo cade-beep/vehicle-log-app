@@ -117,6 +117,11 @@ const SCENARIOS = [
   // Beyond the plan's ten: the two states most likely to spill sideways.
   { name: '11-long-values-narrow', viewport: { width: 320, height: 568, isMobile: true }, scheme: 'dark', rows: 12 },
   { name: '12-desktop-narrow-split', viewport: { width: 1100, height: 900, isMobile: false }, scheme: 'dark', rows: 12 },
+  // The widths where the ledger changes shape. A table that does not fit only
+  // shows up within a few dozen pixels of these, so they are pinned.
+  { name: '13-laptop-1280', viewport: { width: 1280, height: 800, isMobile: false }, scheme: 'dark', rows: 12 },
+  { name: '14-split-boundary-1366', viewport: { width: 1366, height: 768, isMobile: false }, scheme: 'dark', rows: 12 },
+  { name: '15-desktop-1440', viewport: { width: 1440, height: 900, isMobile: false }, scheme: 'dark', rows: 12 },
 ];
 
 /**
@@ -188,11 +193,34 @@ const FIND_OVERFLOW = function () {
     })
     .filter(Boolean);
 
+  /* The ledger has two legitimate shapes: a table that fits, and label:value
+     cards. What it must never be is a table that does not fit - that clips
+     운행사유 mid-glyph and hides 인원, 주유금액 and the delete button behind a
+     horizontal scroll with no affordance.
+
+     The overflow scan above cannot see this. .table-wrapper scrolls, so it
+     absorbs the spill and the page stays the right width: every check passes
+     while the ledger is visibly broken. This compares what the table needs
+     against the room it has, but only while it is still a table. */
+  const wrap = document.querySelector('.table-wrapper');
+  const table = document.querySelector('.log-table');
+  let ledger = null;
+  if (wrap && table && table.querySelector('tbody tr')) {
+    const cardMode = getComputedStyle(table).display === 'block';
+    ledger = {
+      cardMode: cardMode,
+      needs: table.scrollWidth,
+      has: wrap.clientWidth,
+      clipped: !cardMode && wrap.scrollWidth > wrap.clientWidth + 1,
+    };
+  }
+
   return {
     docWidth: docWidth,
     pageScrollWidth: document.documentElement.scrollWidth,
     offenders: bad,
     chain: chain,
+    ledger: ledger,
   };
 };
 
@@ -398,7 +426,8 @@ async function run() {
     const real = r.offenders.filter(function (o) { return !o.inScroller; });
     const rj = r.rejection;
     const rejectionOk = !rj || (rj.marked && rj.focused && rj.inView);
-    const ok = real.length === 0 && !wider &&
+    const clipped = r.ledger && r.ledger.clipped;
+    const ok = real.length === 0 && !wider && !clipped &&
       r.lowContrast.length === 0 && r.smallTargets.length === 0 && rejectionOk;
     if (!ok) failures++;
     console.log('\n' + (ok ? 'PASS' : 'FAIL') + '  ' + r.scenario + '  (' + r.viewport + ')');
@@ -415,6 +444,11 @@ async function run() {
     }
     for (const t of r.smallTargets) {
       console.log('  hit target ' + t.size + ' (needs 24x24)  ' + t.el);
+    }
+    if (r.ledger) {
+      console.log('  ledger: ' + (r.ledger.cardMode ? 'cards' : 'table') +
+        ', needs ' + r.ledger.needs + 'px, has ' + r.ledger.has + 'px' +
+        (r.ledger.clipped ? '  <-- CLIPPED, columns hidden behind a scroll' : ''));
     }
     if (rj) {
       console.log('  rejected submit -> ' + (rj.marked
