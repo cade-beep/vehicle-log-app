@@ -351,9 +351,25 @@ async function run() {
       await page.focus(s.focus);
       await page.type(s.focus, '10500');
     }
+    let rejection = null;
     if (s.submitEmpty) {
       await page.click('button[type=submit]');
-      await new Promise(function (r) { setTimeout(r, 400); });
+      // Long enough for the smooth scroll to settle before measuring.
+      await new Promise(function (r) { setTimeout(r, 900); });
+
+      // A rejected submit must land the driver on the field at fault, not just
+      // print a message under a form three screens tall.
+      rejection = await page.evaluate(function () {
+        const el = document.querySelector('[aria-invalid="true"]');
+        if (!el) return { marked: false };
+        const r = el.getBoundingClientRect();
+        return {
+          marked: true,
+          field: el.id || el.tagName.toLowerCase(),
+          focused: document.activeElement === el,
+          inView: r.top >= 0 && r.bottom <= document.documentElement.clientHeight,
+        };
+      });
     }
 
     const result = await page.evaluate(FIND_OVERFLOW);
@@ -365,6 +381,7 @@ async function run() {
       viewport: s.viewport.width + 'x' + s.viewport.height,
       ...result,
       ...a11y,
+      rejection: rejection,
     });
     await page.close();
   }
@@ -379,8 +396,10 @@ async function run() {
     const wider = r.pageScrollWidth > r.docWidth + 1;
     // Elements inside a scroller only matter when the page itself is spilling.
     const real = r.offenders.filter(function (o) { return !o.inScroller; });
+    const rj = r.rejection;
+    const rejectionOk = !rj || (rj.marked && rj.focused && rj.inView);
     const ok = real.length === 0 && !wider &&
-      r.lowContrast.length === 0 && r.smallTargets.length === 0;
+      r.lowContrast.length === 0 && r.smallTargets.length === 0 && rejectionOk;
     if (!ok) failures++;
     console.log('\n' + (ok ? 'PASS' : 'FAIL') + '  ' + r.scenario + '  (' + r.viewport + ')');
     if (wider) {
@@ -396,6 +415,11 @@ async function run() {
     }
     for (const t of r.smallTargets) {
       console.log('  hit target ' + t.size + ' (needs 24x24)  ' + t.el);
+    }
+    if (rj) {
+      console.log('  rejected submit -> ' + (rj.marked
+        ? 'field ' + rj.field + ', focused=' + rj.focused + ', in view=' + rj.inView
+        : 'NO FIELD MARKED (message only)'));
     }
     if (process.env.AUDIT_VERBOSE) {
       console.log('  measured ' + r.measuredCount + ' text nodes; tightest:');
