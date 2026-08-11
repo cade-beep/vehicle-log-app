@@ -122,6 +122,22 @@ const SCENARIOS = [
   { name: '13-laptop-1280', viewport: { width: 1280, height: 800, isMobile: false }, scheme: 'dark', rows: 12 },
   { name: '14-split-boundary-1366', viewport: { width: 1366, height: 768, isMobile: false }, scheme: 'dark', rows: 12 },
   { name: '15-desktop-1440', viewport: { width: 1440, height: 900, isMobile: false }, scheme: 'dark', rows: 12 },
+  // Longest value every field will accept, on the narrowest screen. The unit
+  // suffix (km/명/원) is painted over the input rather than beside it, so a
+  // long odometer reading is the case where it would collide.
+  {
+    name: '16-max-input-narrow', viewport: { width: 320, height: 568, isMobile: true },
+    scheme: 'dark', rows: 0,
+    fill: {
+      '#driverName': '김규호박서준이하늘김규호박서',
+      '#passengerCount': '100',
+      '#odometer': '9999999',
+      '#distance': '9999',
+      '#destination': '전라남도 광양시 중마중앙로 111 시청 별관 3층 회의실',
+      '#purpose': '본청 정기 회의 참석 및 관련 부서 업무 협의 그리고 현장 점검',
+      '#fuelCost': '9999999',
+    },
+  },
 ];
 
 /**
@@ -193,6 +209,32 @@ const FIND_OVERFLOW = function () {
     })
     .filter(Boolean);
 
+  /* The unit suffix (km, 명, 원) is painted over the input, not beside it, so
+     the only thing keeping a long odometer reading from running underneath it
+     is the padding reserved on the right. That coupling is invisible: change
+     원 to 만원, or bump the font, and the reserve silently stops being enough.
+
+     Measuring where the text lands does not work - once it overflows, the
+     browser scrolls the field and the painted position stops matching any
+     width you can calculate. So this checks the invariant that prevents the
+     collision instead of trying to catch the collision itself. */
+  const collisions = [];
+  document.querySelectorAll('.field-unit').forEach(function (fu) {
+    const input = fu.querySelector('input');
+    const unit = fu.querySelector('.unit');
+    if (!input || !unit) return;
+    const reserved = parseFloat(getComputedStyle(input).paddingRight);
+    const needed = unit.getBoundingClientRect().width + 6;
+    if (reserved < needed) {
+      collisions.push({
+        el: '#' + input.id,
+        unit: unit.textContent.trim(),
+        reserved: Math.round(reserved),
+        needed: Math.round(needed),
+      });
+    }
+  });
+
   /* The ledger has two legitimate shapes: a table that fits, and label:value
      cards. What it must never be is a table that does not fit - that clips
      운행사유 mid-glyph and hides 인원, 주유금액 and the delete button behind a
@@ -221,6 +263,7 @@ const FIND_OVERFLOW = function () {
     offenders: bad,
     chain: chain,
     ledger: ledger,
+    collisions: collisions,
   };
 };
 
@@ -395,6 +438,12 @@ async function run() {
       await page.focus(s.focus);
       await page.type(s.focus, '10500');
     }
+    if (s.fill) {
+      for (const [sel, value] of Object.entries(s.fill)) {
+        await page.focus(sel);
+        await page.type(sel, value);
+      }
+    }
     let rejection = null;
     if (s.submitEmpty) {
       await page.click('button[type=submit]');
@@ -445,7 +494,7 @@ async function run() {
     const clipped = r.ledger && r.ledger.clipped;
     const ok = real.length === 0 && !wider && !clipped &&
       r.lowContrast.length === 0 && r.smallTargets.length === 0 &&
-      r.wideFields.length === 0 && rejectionOk;
+      r.wideFields.length === 0 && r.collisions.length === 0 && rejectionOk;
     if (!ok) failures++;
     console.log('\n' + (ok ? 'PASS' : 'FAIL') + '  ' + r.scenario + '  (' + r.viewport + ')');
     if (wider) {
@@ -461,6 +510,10 @@ async function run() {
     }
     for (const t of r.smallTargets) {
       console.log('  hit target ' + t.size + ' (needs 24x24)  ' + t.el);
+    }
+    for (const c of r.collisions || []) {
+      console.log('  unit "' + c.unit + '" needs ' + c.needed +
+        'px reserved, has ' + c.reserved + 'px  ' + c.el);
     }
     for (const w of r.wideFields) {
       console.log('  field ' + w.width + 'px wide (max 560)  ' + w.el);
