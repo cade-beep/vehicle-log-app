@@ -88,7 +88,8 @@ function fakeRows(n) {
       odometer: 10500 + i * 137,
       distance: 45 + (i % 9) * 13,
       // A deliberately long value - the ledger has to cope with real place names.
-      destination: i % 4 === 0 ? '전라남도 광양시 중마중앙로 111 시청 별관' : '광양시청',
+      destination: i % 4 === 0 ? '전라남도 광양시 중마중앙로 111 시청 별관'
+        : (i === 1 ? '광양시청, 별관 "3층"' : '광양시청'),
       purpose: i % 3 === 0 ? '본청 정기 회의 참석 및 관련 부서 업무 협의' : '현장 점검',
       passengerCount: (i % 4) + 1,
       fuelCost: i % 3 === 0 ? '' : 50000 + i * 1000,
@@ -138,6 +139,9 @@ const SCENARIOS = [
       '#fuelCost': '9999999',
     },
   },
+  // Not a layout case: the export builds a file from the same records the
+  // ledger renders, and bad quoting or a missing BOM is invisible on screen.
+  { name: '17-csv-export', viewport: DESKTOP, scheme: 'dark', rows: 12, exportCsv: true },
 ];
 
 /**
@@ -444,6 +448,29 @@ async function run() {
         await page.type(sel, value);
       }
     }
+    let csv = null;
+    if (s.exportCsv) {
+      // Capture what the download would contain instead of letting the browser
+      // save it: the blob is the artefact under test, not the file on disk.
+      await page.evaluate(function () {
+        const orig = URL.createObjectURL.bind(URL);
+        URL.createObjectURL = function (blob) { window.__blob = blob; return orig(blob); };
+        HTMLAnchorElement.prototype.click = function () {};
+      });
+      await page.click('#exportCsv');
+      // Read the bytes, not Blob.text(): the UTF-8 decode algorithm strips a
+      // leading BOM, so text() reports a file without one as identical to a
+      // file with one - and the BOM is precisely what is being checked.
+      csv = await page.evaluate(async function () {
+        if (!window.__blob) return null;
+        const bytes = new Uint8Array(await window.__blob.arrayBuffer());
+        return {
+          bom: bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF,
+          text: new TextDecoder('utf-8').decode(bytes),
+        };
+      });
+    }
+
     let rejection = null;
     if (s.submitEmpty) {
       await page.click('button[type=submit]');
@@ -475,6 +502,7 @@ async function run() {
       ...result,
       ...a11y,
       rejection: rejection,
+      csv: csv,
     });
     await page.close();
   }
@@ -492,9 +520,25 @@ async function run() {
     const rj = r.rejection;
     const rejectionOk = !rj || (rj.marked && rj.focused && rj.inView);
     const clipped = r.ledger && r.ledger.clipped;
+
+    // The export is checked against what it has to survive: Excel needs the
+    // BOM, RFC 4180 needs commas and quotes escaped, and no record may vanish.
+    const csvProblems = [];
+    if (r.csv) {
+      const lines = r.csv.text.split('\r\n').filter(Boolean);
+      const quoted = '"광양시청, 별관 ""3층"""';
+      if (!r.csv.bom) csvProblems.push('UTF-8 BOM 없음 - 엑셀에서 한글이 깨진다');
+      if (!lines[0] || lines[0].indexOf('기록ID') === -1) csvProblems.push('헤더 행 없음');
+      if (lines.length !== 13) csvProblems.push('데이터 ' + (lines.length - 1) + '행, 기대 12행');
+      if (r.csv.text.indexOf(quoted) === -1) csvProblems.push('쉼표/따옴표가 RFC 4180대로 인용되지 않음');
+    } else if (r.scenario.indexOf('csv') !== -1) {
+      csvProblems.push('내보내기가 아무것도 만들지 않았다');
+    }
+
     const ok = real.length === 0 && !wider && !clipped &&
       r.lowContrast.length === 0 && r.smallTargets.length === 0 &&
-      r.wideFields.length === 0 && r.collisions.length === 0 && rejectionOk;
+      r.wideFields.length === 0 && r.collisions.length === 0 &&
+      csvProblems.length === 0 && rejectionOk;
     if (!ok) failures++;
     console.log('\n' + (ok ? 'PASS' : 'FAIL') + '  ' + r.scenario + '  (' + r.viewport + ')');
     if (wider) {
@@ -505,6 +549,7 @@ async function run() {
         '  [overflow-x:' + o.overflowX + (o.inScroller ? ', in scroller' : '') + ']');
     }
     if (r.offenders.length > 12) console.log('  ... and ' + (r.offenders.length - 12) + ' more');
+    for (const c of csvProblems) console.log('  csv: ' + c);
     for (const c of r.lowContrast) {
       console.log('  contrast ' + c.ratio + ':1 (needs ' + c.need + ')  ' + c.el + '  "' + c.text + '"');
     }

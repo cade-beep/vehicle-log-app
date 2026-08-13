@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableBody = document.getElementById('logTableBody');
     const emptyState = document.getElementById('emptyState');
     const lastUpdatedEl = document.getElementById('lastUpdated');
+    const exportButton = document.getElementById('exportCsv');
 
     // driveDate/departTime/arriveTime are plain numeric text fields (no native
     // calendar/clock picker) so staff can type digits straight through; this
@@ -395,6 +396,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
+    // CSV Export
+    // -------------------------------------------------------------
+
+    /**
+     * Columns as stored, with the headers the spreadsheet already uses so the
+     * file and the sheet read the same way.
+     *
+     * This is the raw export, not the 국세청 운행기록부. That form wants the
+     * distance split across 출퇴근용 / 일반업무용 / 비업무용 and both odometer
+     * readings, and this schema carries neither - 운행사유 is free text and
+     * there is only one 계기판 value. Producing the form's shape from what is
+     * here would mean inventing the numbers, so it waits for the schema work.
+     */
+    const CSV_COLUMNS = [
+        ['id', '기록ID'],
+        ['date', '일자'],
+        ['vehicleNo', '차량번호'],
+        ['driver', '운전자'],
+        ['departTime', '출발시간'],
+        ['arriveTime', '도착시간'],
+        ['odometer', '계기판(km)'],
+        ['distance', '주행거리(km)'],
+        ['destination', '목적지'],
+        ['purpose', '운행사유'],
+        ['passengerCount', '인원'],
+        ['fuelCost', '주유금액'],
+        ['createdAt', '작성시각'],
+    ];
+
+    // RFC 4180: quote when the value holds a comma, quote or newline, and
+    // double any quote inside.
+    function csvCell(v) {
+        const s = (v === null || v === undefined) ? '' : String(v);
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }
+
+    function buildCsv(rows) {
+        const lines = [CSV_COLUMNS.map(c => c[1])]
+            .concat(rows.map(r => CSV_COLUMNS.map(c => r[c[0]])));
+        // The BOM is what makes Excel read this as UTF-8. Without it every
+        // Korean field opens as mojibake, which is the whole file wasted.
+        return '﻿' + lines.map(l => l.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    }
+
+    function exportCsv() {
+        if (!records.length) return;
+
+        const stamp = new Date().toISOString().slice(0, 10);
+        const blob = new Blob([buildCsv(records)], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `운행일지_${stamp}.csv`;
+        a.click();
+        // Firefox needs the URL alive until the click is handled; a task tick
+        // is enough and leaking it would pin the whole blob in memory.
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    if (exportButton) exportButton.addEventListener('click', exportCsv);
+
+    // -------------------------------------------------------------
     // Render Functions
     // -------------------------------------------------------------
     function renderTable() {
@@ -403,6 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lastRenderedSignature = signature;
 
         tableBody.innerHTML = '';
+        if (exportButton) exportButton.disabled = records.length === 0;
 
         if (records.length === 0) {
             showEmptyState('등록된 운행일지가 없습니다.<br>양식을 작성하여 새로 추가해 보세요.');
@@ -429,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td data-label="인원">${r.passengerCount} 명</td>
                 <td data-label="주유금액">${formattedFuelCost}</td>
                 <td class="col-actions">
-                    <button class="btn-delete" data-id="${escapeHTML(r.id)}"
+                    <button class="btn-quiet" data-id="${escapeHTML(r.id)}"
                             aria-label="${escapeHTML(r.date)} ${escapeHTML(r.vehicleNo)} 기록 삭제">삭제</button>
                 </td>
             `;
@@ -437,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Attach Delete Listeners
-        document.querySelectorAll('.btn-delete').forEach(btn => {
+        document.querySelectorAll('.btn-quiet[data-id]').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const button = e.currentTarget;
                 const id = button.getAttribute('data-id');

@@ -176,7 +176,10 @@ h1, h2, p { margin: 0; }
     letter-spacing: -.01em;
 }
 
+/* Pushed right so the title keeps the left edge and the timestamp sits beside
+   the export button instead of being spread across the whole head. */
 .last-updated {
+    margin-left: auto;
     font-size: 11.5px;
     color: var(--ink-3);
     font-variant-numeric: tabular-nums;
@@ -336,7 +339,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin
     cursor: not-allowed;
 }
 
-.btn-delete {
+.btn-quiet {
     padding: 4px 8px;
     font: inherit;
     font-size: 12px;
@@ -348,12 +351,12 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin
     transition: color var(--t), border-color var(--t);
 }
 
-.btn-delete:hover:not(:disabled) {
+.btn-quiet:hover:not(:disabled) {
     color: var(--seal);
     border-color: var(--seal);
 }
 
-.btn-delete:disabled { opacity: .5; cursor: progress; }
+.btn-quiet:disabled { opacity: .5; cursor: progress; }
 
 /* ── Ledger table ───────────────────────────────────────────── */
 
